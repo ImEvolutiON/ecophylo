@@ -162,59 +162,59 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
 
     # merging the branches with different models
     if spmodel == "NTB" :
-
-    # adding popInd on every leaf before any merge just like SGD model
-    for leaf in tree.iter_leaves():
-        popInd = [0] * (ndeme + 1) # initialize a 0-vector of length ndeme+1 for each leaf
-        popInd[leaf.deme] += 1 # because we did not merge branches yet, the current leaf is 1 individual :
-                               # we add 1 for each traversed leaf/individual in its corresponding deme
-        leaf.popInd = popInd # attach the vector popInd to the leaf
-        if not hasattr(leaf, "mergedInd"):
-            leaf.mergedInd = None # if the leaf has no mergeInd attribute, we initialize it to None
     
-    # now each leaf has popInd and mergeInd available for future merging
+        # adding popInd on every leaf before any merge just like SGD model
+        for leaf in tree.iter_leaves():
+            popInd = [0] * (ndeme + 1) # initialize a 0-vector of length ndeme+1 for each leaf
+            popInd[leaf.deme] += 1 # because we did not merge branches yet, the current leaf is 1 individual :
+                                   # we add 1 for each traversed leaf/individual in its corresponding deme
+            leaf.popInd = popInd # attach the vector popInd to the leaf
+            if not hasattr(leaf, "mergedInd"):
+                leaf.mergedInd = None # if the leaf has no mergeInd attribute, we initialize it to None
         
-        traversedNodes = set()
-        for node in tree.traverse("postorder"): # now we traverse the whole tree, in postorder
-            if not node.is_leaf():
-                # added check for dichotomic trees
-                children = node.get_children()
-                if len(children) != 2:
-                raise ValueError(
-                    "Non dichotomic tree"
-                    )
-                # check if all descendants are from the same species, not only the two immediate children nodes
-                # previous code had strange behaviours, merging nodes that had subtrees of different species,
-                # sometimes individuals could disappear and getAbund() would output less than the n input.
-                # let's break it down
-                
-                desc_sp = set(leaf.sp for leaf in node.iter_leaves()) # when we get a node (that isn't a leaf, we're still in 'if not node.is_leaf()')
-                                                                      # we get all of its leaves (terminal nodes) not only the direct two descendants
-                                                                      # and for each leaf we get the attribution sp and store it in desc_sp
-                                                                      # set merges identical cells in the vector leaf.sp
-                                                                      #         node
-                                                                      #        /    \
-                                                                      #      A        B
-                                                                      #             /   \
-                                                                      #             C     D
-                                                                      # if [A.sp=4, C.sp=4, D.sp=4] --> desc_sp = {4}
-                                                                      # else if [A.sp=4, C.sp=4, D.sp=6] --> desc_sp = {4, 6}
-                
-                if len(desc_sp) == 1: # if sp_desc contains only one species ID, it means the subtree (called node) we're looking at only gave rise
-                                      # to one species
-                    mergedLeaves = ""
-                    popInd = [0] * (ndeme + 1) # initiate a new counting vector for our oncoming merged leaf
-                    for leaf in node.iter_leaves(): # we iter all leaves of the one-species subtree
-                        if hasattr(leaf, "mergedInd") and leaf.mergedInd is not None: # if it's already the result of a merge
-                            mergedLeaves += leaf.mergedInd # we get its history 'leaf.mergedInd' and add it to mergeLeaves (that contains other leaves histories)
-                        else:
-                            mergedLeaves += " " + leaf.name # else, it means the leaf is a single individual and we only add its name the the node history
-                        popInd = [a + b for a, b in zip(popInd, leaf.popInd)] # then
-                    # merge initialization
-                    survivor = children[1] # we choose a direct descendant
-                    survivor.mergedInd = mergedLeaves # the survivor gets the attribute mergedInd which we set to the history of all descendants
-                    survivor.popInd = popInd # we also give it the vector of abundance of all descendants
-                    children[0].delete() # we remove the other direct descendant
+        # now each leaf has popInd and mergeInd available for future merging
+            
+            traversedNodes = set()
+            for node in tree.traverse("postorder"): # now we traverse the whole tree, in postorder
+                if not node.is_leaf():
+                    # added check for dichotomic trees
+                    children = node.get_children()
+                    if len(children) != 2:
+                        raise ValueError(
+                            "Non dichotomic tree"
+                            )
+                    # check if all descendants are from the same species, not only the two immediate children nodes
+                    # previous code had strange behaviours, merging nodes that had subtrees of different species,
+                    # sometimes individuals could disappear and getAbund() would output less than the n input.
+                    # let's break it down
+                    
+                    desc_sp = set(leaf.sp for leaf in node.iter_leaves()) # when we get a node (that isn't a leaf, we're still in 'if not node.is_leaf()')
+                                                                          # we get all of its leaves (terminal nodes) not only the direct two descendants
+                                                                          # and for each leaf we get the attribution sp and store it in desc_sp
+                                                                          # set merges identical cells in the vector leaf.sp
+                                                                          #         node
+                                                                          #        /    \
+                                                                          #      A        B
+                                                                          #             /   \
+                                                                          #             C     D
+                                                                          # if [A.sp=4, C.sp=4, D.sp=4] --> desc_sp = {4}
+                                                                          # else if [A.sp=4, C.sp=4, D.sp=6] --> desc_sp = {4, 6}
+                    
+                    if len(desc_sp) == 1: # if sp_desc contains only one species ID, it means the subtree (called node) we're looking at only gave rise
+                                          # to one species
+                        mergedLeaves = ""
+                        popInd = [0] * (ndeme + 1) # initiate a new counting vector for our oncoming merged leaf
+                        for leaf in node.iter_leaves(): # we iter all leaves of the one-species subtree
+                            if hasattr(leaf, "mergedInd") and leaf.mergedInd is not None: # if it's already the result of a merge
+                                mergedLeaves += leaf.mergedInd # we get its history 'leaf.mergedInd' and add it to mergeLeaves (that contains other leaves histories)
+                            else:
+                                mergedLeaves += " " + leaf.name # else, it means the leaf is a single individual and we only add its name the the node history
+                            popInd = [a + b for a, b in zip(popInd, leaf.popInd)] # then
+                        # merge initialization
+                        survivor = children[1] # we choose a direct descendant
+                        survivor.mergedInd = mergedLeaves # the survivor gets the attribute mergedInd which we set to the history of all descendants
+                        survivor.popInd = popInd # we also give it the vector of abundance of all descendants
+                        children[0].delete() # we remove the other direct descendant
 
         
         
