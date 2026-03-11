@@ -162,11 +162,36 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
 
     # merging the branches with different models
     if spmodel == "NTB" :
+
+    # adding popInd on every leaf before any merge just like SGD model
+    for leaf in tree.iter_leaves():
+        popInd = [0] * (ndeme + 1) # initialize a 0-vector of length ndeme+1 for each leaf
+        popInd[leaf.deme] += 1 # because we did not merge branches yet, the current leaf is 1 individual : we add 1 for each traversed leaf
+        leaf.popInd = popInd # attach the vector popInd to the leaf
+        if not hasattr(leaf, "mergedInd"):
+            leaf.mergedInd = None # if the leaf has no mergeInd attribute, we initialize it to None
+    
+    # now each leaf has popInd and mergeInd available for future merging
+        
         traversedNodes = set()
         for node in tree.traverse("postorder"):
             if not node.is_leaf():
-                children = node.get_children()
-                csp = [i.sp for i in children]
+                # check if all descendants are from the same species, not only the two immediate children nodes
+                # previous code had strange behaviours, merging nodes that had subtrees of different species
+                desc_sp = set(leaf.sp for leaf in node.iter_leaves())
+                if len(desc_sp) == 1: # if there's only one species in the descendants
+                    mergedLeaves = ""
+                    popInd = [0] * (ndeme + 1)
+                for leaf in node.iter_leaves():
+                    if hasattr(leaf, "mergedInd") and leaf.mergedInd is not None:
+                        mergedLeaves += leaf.mergedInd # if the leaf is the outcome of a previous merge (= it has the attribute "mergedInd") then get that info
+                    else:
+                        mergedLeaves += " " + leaf.name
+                popInd = [a + b for a, b in zip(popInd, leaf.popInd)]
+
+
+                #children = node.get_children()
+                #csp = [i.sp for i in children]
                 if csp.count(csp[0]) == len(csp):
                     mergedLeaves = ""
                     popInd = [0] * (ndeme + 1)
