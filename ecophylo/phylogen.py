@@ -119,7 +119,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
     # init some parameters
     innerNodeIndex = 0
     nIndsORI = 0
-    spID = 0
+    spID = 1
     demeID = 0
     ndeme = 0
     
