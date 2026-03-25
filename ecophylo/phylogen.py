@@ -115,6 +115,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
         raise ValueError('force_ultrametric must be a boolean')
     if seed is not None and not isinstance(seed, int):
         raise ValueError('seed must be an integer')
+    if seed is not None:
+        np.random.seed(seed) # Initialize RNG vector
 
     # init some parameters
     innerNodeIndex = 0
@@ -148,7 +150,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
             node.name = name_deme[0]
 
         if not node.is_leaf():
-            umut = ubranch_mutation(node= node, mu= mu, tau= tau, seed= seed)
+            umut = ubranch_mutation(node= node, mu= mu, tau= tau)
             if umut:
                 # print(f"Speciation event @ node {node.name}")
                 spID += 1
@@ -276,6 +278,13 @@ def ubranch_mutation(node, mu, tau = 0, seed = None):
         seperated for to be considered distinct species
     seed : int
         None by default, set the seed for mutation random events.
+        ## FIX with Dependent-patch ##
+        When calling a global simulation pipeline with ecophylo.simulate()
+        genealogy to phylogeny the RNG vector is called at the beginning
+        of toPhylo() so that it's not reset each time ubranch_mutation() is
+        called. If you want to check on the behaviour of ubranch_mutation() 
+        with seeding, you can set it and it will reset the RNG vector each
+        time ubran_mutation() is run.
         
     Returns
     -------
@@ -308,10 +317,10 @@ def ubranch_mutation(node, mu, tau = 0, seed = None):
         raise ValueError('tau must be a float superior or equal to 0')
     if seed is not None and not isinstance(seed, int):
         raise ValueError('seed must be an integer')
+    if seed is not None:
+        np.random.seed(seed) # if you put a seed in umut_branch() it means you want to check its behavior so reset seed
     
     lambd = max((node.dist - tau), 0) * mu 
-    # set the seed
-    np.random.seed(seed)
     rb = np.random.poisson(lambd) 
     return rb >= 1 # parametrize the 1 by a value n
 
