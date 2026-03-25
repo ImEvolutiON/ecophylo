@@ -159,6 +159,11 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
                     except AttributeError:
                         leaf.add_features(sp=1)
             # print(f"node {innerNodeIndex} --> sp: {node.sp}")
+        else :
+            umut = ubranch_mutation(node= node, mu= mu, tau= tau, seed= seed)
+            if umut :
+                spID +=1
+                node.sp = spID
 
     # merging the branches with different models
     if spmodel == "NTB" :
