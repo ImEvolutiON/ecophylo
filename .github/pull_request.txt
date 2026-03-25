@@ -1,0 +1,174 @@
+# Erratum — Random Number Generation in Branch Mutation Simulation
+
+## Summary
+
+This pull request fixes the handling of random seeding in `phylogen.py` during full-tree mutation simulation.
+
+The issue was not the existence of a `seed` argument in `ubranch_mutation()` itself, because it can be useful to explore ubran_mutation() behaviour by itself. But the reset the NumPy random number generator repeatedly during a single simulation and thereby break the intended independence of branchwise mutation events.
+
+The fix consists in seeding the RNG once at the beginning of `toPhylo()` and then calling `ubranch_mutation()` without passing a seed during full-tree simulation.
+
+---
+
+## Problem Description
+
+The original implementation allowed the global seed from `toPhylo()` to be passed down to `ubranch_mutation()` for every branch, because ubranch_mutation() was looping over every node of the tree. In that configuration, each branch-level mutation draw could restart the pseudo-random number generator from the same initial state.
+
+Formally, for a branch i with length B_i:
+
+    lambda_i = max(B_i - tau, 0) * mu
+
+and the mutation accumulation X was modeled as:
+
+    X_i ~ Poisson(lambda_i)
+
+with mutation event Y:
+
+    Y_i = 1 if X_i > 0 else 0
+
+The intended model requires the branchwise mutation accumulation:
+
+    X_1, X_2, ..., X_n
+
+to be independent conditional on the simulation parameters.
+
+If the same seed is reapplied at every branch, the branchwise draws no longer arise from successive states of a single random sequence. Instead, each draw reuses the same initial generator state, which induces artificial dependence between branches.
+
+---
+
+## Important Clarification
+
+The issue does not occur when `ubranch_mutation()` is called without a seed.
+
+In the corrected workflow:
+
+1. `toPhylo()` initializes the global RNG once using `np.random.seed(seed)`.
+2. Each subsequent call to `ubranch_mutation()` is made without a seed.
+3. `ubranch_mutation()` therefore consumes the current state of the RNG instead of resetting it.
+
+Under this design, stochastic independence between branches is preserved.
+
+The `seed` argument is still allowed in `ubranch_mutation()` for standalone debugging or isolated testing, where reproducibility of a single branch-level draw may be useful. However, it must not be used in the full-tree simulation loop.
+
+---
+
+## Mathematical Rationale
+
+Let:
+
+    X_i = F(lambda_i, u_i)
+
+where:
+- `lambda_i` is the Poisson parameter for branch i,
+- `u_i` is the random input used by the generator at draw i.
+- `F()` is the sampling function following a Poisson law using a Poisson parameter and a random generator
+
+### Correct implementation
+
+When the RNG is seeded once globally, successive calls consume successive pseudo-random inputs:
+PS : for non-experts, you cannot consume all the u_n pseudo-random inputs ;)
+
+    X_1 = F(lambda_1, u_1)
+    X_2 = F(lambda_2, u_2)
+    ...
+    X_n = F(lambda_n, u_n)
+
+with distinct `u_i`.
+
+This is consistent with the intended stochastic model.
+
+### Incorrect implementation
+
+When the RNG is reseeded at each branch with the same seed, each draw uses the same initial pseudo-random state:
+
+    X_i = F(lambda_i, u_1)
+
+for all i.
+
+Even if the `lambda_i` values differ across branches, all mutation draws are then driven by the same underlying random input, which creates artificial dependence.
+This have a very big impact when lambda_i and lambda_o are equal, cause they represent the exact same event, even if it's 2 different branches : its clearly not independence.
+---
+
+## Root Cause
+
+The root cause was the branchwise with np.random.seed(seed) of the global seed into `ubranch_mutation()` during the tree traversal.
+
+The problem was therefore architectural:
+
+- global simulation seeding should occur once at the `toPhylo()` level,
+- branch-level mutation draws should consume the RNG state,
+- branch-level reseeding should be reserved for explicit standalone debugging only.
+
+for example when you do
+
+	np.random.seed(12345)
+	np.random.poisson(5) --> out : 7
+	np.random.poisson(5) --> out : 5
+	np.random.poisson(5) --> out : 2
+
+but when you do
+
+	np.random.seed(12345)
+	np.random.poisson(5) --> out : 7
+	np.random.seed(12345)
+	np.random.poisson(5) --> out : 7
+	np.random.seed(12345)
+	np.random.poisson(5) --> out : 7
+
+You can see the behaviour of F() here, 5 is lambd and there's a underlying u_i inside the NumPy random.poisson() function.
+---
+
+## Fix Implemented
+
+### In `toPhylo()`
+
+The random number generator is seeded once at the beginning of the simulation:
+
+    if seed is not None:
+        np.random.seed(seed)
+
+### During branch traversal
+
+`ubranch_mutation()` is now called without passing `seed`:
+
+    umut = ubranch_mutation(node=node, mu=mu, tau=tau)
+
+### In `ubranch_mutation()`
+
+The `seed` argument is preserved only for explicit standalone use and is no longer used by the normal full-tree simulation workflow.
+
+---
+
+## Result
+
+After this fix:
+
+- full-tree simulations remain reproducible when `toPhylo(seed=...)` is used;
+- mutation draws across branches are generated from successive RNG states;
+- branchwise stochastic independence is preserved;
+- `ubranch_mutation(seed=...)` remains available for isolated debugging and testing.
+
+---
+
+## Scope of the Fix
+
+This pull request addresses only the random seeding logic in branch mutation simulation.
+
+It does not modify:
+- the Poisson mutation model itself,
+- the NTB or SGD merge logic,
+- the return structure of `toPhylo()`,
+- the broader phylogenetic post-processing pipeline.
+
+---
+
+## Impact
+
+This fix:
+
+- restores the intended stochastic behavior of branch mutation events,
+- preserves reproducibility at the whole-simulation level,
+- avoids artificial correlation between branch mutation outcomes,
+- keeps the branch-level helper function usable for debugging.
+
+---
