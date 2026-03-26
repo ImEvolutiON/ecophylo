@@ -1,0 +1,102 @@
+# Allow terminal branches to accumulate mutations in `toPhylo()`
+
+## Summary
+
+This pull request extends the mutation-sprinkling step in `ecophylo/phylogen.py` so that terminal branches (i.e. leaf branches) can also accumulate mutations.
+
+Previously, `toPhylo()` only evaluated mutation events on internal branches. As a result, long terminal branches could not generate branch-specific mutations, even though they may represent substantial evolutionary time.
+
+This patch modifies the traversal logic so that both internal and terminal branches are evaluated with `ubranch_mutation()`.
+
+---
+
+## Rationale
+
+The mutation model used in `toPhylo()` assumes that the number of mutations on a branch follows a Poisson distribution with parameter:
+
+    lambda = max(B - tau, 0) * mu
+
+where:
+- `B` is branch length,
+- `mu` is the mutation rate,
+- `tau` is the minimum number of generations needed for a mutation to stabilize in a lineage.
+
+Under this model, any branch with non-zero effective length can accumulate mutations, including terminal branches.
+
+Restricting mutation events to internal branches only creates an inconsistency between:
+- the stated branchwise Poisson mutation process,
+- and the actual implementation.
+
+In particular, long terminal branches may carry substantial mutational opportunity and should therefore be eligible for speciation events under the same rules as internal branches.
+
+---
+
+## Problem in Previous Implementation
+
+The previous implementation only tested `ubranch_mutation()` inside:
+
+    if not node.is_leaf():
+
+This meant that:
+
+- internal branches could accumulate mutations,
+- terminal branches could not,
+- speciation events occurring on long terminal branches were excluded by construction.
+
+This behavior is biologically restrictive and mathematically inconsistent with a branchwise mutation process.
+
+---
+
+## Fix Implemented
+
+The traversal logic in `toPhylo()` now evaluates mutation events on leaves as well.
+
+### Previous logic
+
+    if not node.is_leaf():
+        umut = ubranch_mutation(...)
+        if umut:
+            ...
+
+### New logic
+
+    if not node.is_leaf():
+        umut = ubranch_mutation(...)
+        if umut:
+            ...
+    else:
+        umut = ubranch_mutation(...)
+        if umut:
+            spID += 1
+            node.sp = spID
+
+This change ensures that terminal branches are treated consistently with the rest of the tree under the mutation model.
+
+---
+
+## Expected Effect
+
+After this patch:
+
+- long terminal branches may accumulate mutations,
+- terminal lineages can acquire species-specific labels,
+- the mutation process is applied to all branches rather than only internal ones.
+
+This makes the implementation more consistent with the stated Poisson branch mutation framework.
+
+---
+
+## Scope
+
+This patch is limited to the introduction of mutation evaluation on terminal branches.
+
+It does not attempt to modify:
+- random seed handling,
+- NTB/SGD merge logic,
+- ultrametric forcing,
+- return values,
+- other pre-existing issues in `phylogen.py`.
+
+These concerns are intentionally left to other dedicated patches.
+
+---
