@@ -14,7 +14,7 @@ Functions :
 
 import numpy as np
 
-def getAbund(tree, samples = None):
+def getAbund(tree, samples = None, spmodel = None):
     """
     
     Parameters
@@ -56,18 +56,29 @@ def getAbund(tree, samples = None):
       if not isinstance(samples, int):
           raise ValueError('samples must be an integer')
 
-    sfs = list()
     abund = list()
-    for leaf in tree.iter_leaves():
-        try:
-            inds = leaf.mergedInd.lstrip(" ") # remove 1st space
-            inds = list(inds.split(" ")) # strip on spaces
-            abund.append(len(inds)) # get length 
-        except AttributeError:
-            abund.append(1)
-    sfs.extend(abund)
-    # think about catching error when phylogeny has only 1 sp
+    sfs = list()
     
+    from collections import Counter
+    
+    if spmodel == "NTB":        
+        leaf_names = [leaf.sp for leaf in tree.iter_leaves()]
+        sfs = list(Counter(leaf_names).values())
+        
+    elif spmodel == "SGD":
+        for leaf in tree.iter_leaves():
+            try:
+                inds = leaf.mergedInd.lstrip(" ") # remove 1st space
+                inds = list(inds.split(" ")) # strip on spaces
+                abund.append(len(inds)) # get length 
+            except AttributeError:
+                abund.append(1)
+        sfs.extend(abund)
+
+    else:
+        raise Exception('spmodel should be NTB or SGD')
+        # think about catching error when phylogeny has only 1 sp
+        
     if samples != None and sum(sfs) != samples:
         raise Exception(f"Simulated phylogeny has only one species!")
         # TODO : modify error with a better check here

@@ -115,6 +115,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
         raise ValueError('force_ultrametric must be a boolean')
     if seed is not None and not isinstance(seed, int):
         raise ValueError('seed must be an integer')
+    if seed is not None:
+        np.random.seed(seed) # Initialize RNG vector
 
     # init some parameters
     innerNodeIndex = 0
@@ -124,7 +126,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
     ndeme = 0
     
     # mutation model on branches
-    for node in tree.traverse("preorder"):
+    for node in tree.traverse("preorder"): # traverse les noeuds
         try:
             node.sp
         except AttributeError:
@@ -148,7 +150,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
             node.name = name_deme[0]
 
         if not node.is_leaf():
-            umut = ubranch_mutation(node= node, mu= mu, tau= tau, seed= seed)
+            umut = ubranch_mutation(node= node, mu= mu, tau= tau)
             if umut:
                 # print(f"Speciation event @ node {node.name}")
                 spID += 1
@@ -158,66 +160,26 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
                         leaf.sp = spID
                     except AttributeError:
                         leaf.add_features(sp=1)
-            # print(f"node {innerNodeIndex} --> sp: {node.sp}")
-
-    # merging the branches with different models
-    if spmodel == "NTB" :
     
-        # adding popInd on every leaf before any merge just like SGD model
-        for leaf in tree.iter_leaves():
-            popInd = [0] * (ndeme + 1) # initialize a 0-vector of length ndeme+1 for each leaf
-            popInd[leaf.deme] += 1 # because we did not merge branches yet, the current leaf is 1 individual :
-                                   # we add 1 for each traversed leaf/individual in its corresponding deme
-            leaf.popInd = popInd # attach the vector popInd to the leaf
-            if not hasattr(leaf, "mergedInd"):
-                leaf.mergedInd = None # if the leaf has no mergeInd attribute, we initialize it to None
-        
-        # now each leaf has popInd and mergeInd available for future merging
-            
-            traversedNodes = set()
-            for node in tree.traverse("postorder"): # now we traverse the whole tree, in postorder
-                if not node.is_leaf():
-                    # added check for dichotomic trees
-                    children = node.get_children()
-                    if len(children) != 2:
-                        raise ValueError(
-                            "Non dichotomic tree"
-                            )
-                    # check if all descendants are from the same species, not only the two immediate children nodes
-                    # previous code had strange behaviours, merging nodes that had subtrees of different species,
-                    # sometimes individuals could disappear and getAbund() would output less than the n input.
-                    # let's break it down
-                    
-                    desc_sp = set(leaf.sp for leaf in node.iter_leaves()) # when we get a node (that isn't a leaf, we're still in 'if not node.is_leaf()')
-                                                                          # we get all of its leaves (terminal nodes) not only the direct two descendants
-                                                                          # and for each leaf we get the attribution sp and store it in desc_sp
-                                                                          # set merges identical cells in the vector leaf.sp
-                                                                          #         node
-                                                                          #        /    \
-                                                                          #      A        B
-                                                                          #             /   \
-                                                                          #             C     D
-                                                                          # if [A.sp=4, C.sp=4, D.sp=4] --> desc_sp = {4}
-                                                                          # else if [A.sp=4, C.sp=4, D.sp=6] --> desc_sp = {4, 6}
-                    
-                    if len(desc_sp) == 1: # if sp_desc contains only one species ID, it means the subtree (called node) we're looking at only gave rise
-                                          # to one species
-                        mergedLeaves = ""
-                        popInd = [0] * (ndeme + 1) # initiate a new counting vector for our oncoming merged leaf
-                        for leaf in node.iter_leaves(): # we iter all leaves of the one-species subtree
-                            if hasattr(leaf, "mergedInd") and leaf.mergedInd is not None: # if it's already the result of a merge
-                                mergedLeaves += leaf.mergedInd # we get its history 'leaf.mergedInd' and add it to mergeLeaves (that contains other leaves histories)
-                            else:
-                                mergedLeaves += " " + leaf.name # else, it means the leaf is a single individual and we only add its name the the node history
-                            popInd = [a + b for a, b in zip(popInd, leaf.popInd)] # then
-                        # merge initialization
-                        survivor = children[1] # we choose a direct descendant
-                        survivor.mergedInd = mergedLeaves # the survivor gets the attribute mergedInd which we set to the history of all descendants
-                        survivor.popInd = popInd # we also give it the vector of abundance of all descendants
-                        children[0].delete() # we remove the other direct descendant
+    #===================================
+    # PHYLOGENY WITH PARAPHYLETIC GROUPS
+    #===================================
+    #
+    # it is necessary to find a way to represent the genealogy as a phylogeny
+    # else, LTT and any phylogenetic analysis would be biaised.
+    # As for now, integration of the UNTB is done only for present pattern
+    # emerging from past demography; there's a Counter in "sumstat" that gets
+    # the abundances per species : getAbund returns a correct sfs as
+    # paraphyly don't have impact on present patterns of species when you
+    # specify spmodel = "NTB". At least it shouldn't (TBD).
+    #
+    # Still, what should be done for the next patch :
+    # - dev a new phylogenetic algorithm
+    # - adapt the sumstat.py, and try to remove the needed "spmodel"
+    # - remove this block
+    #
+    #if spmodel == "NTB":
 
-        
-        
         
     if spmodel == "SGD" : 
 
@@ -284,10 +246,11 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
             if dst != tree_dist:
                 leaf.dist += tree_dist - dst
 
-    nsp = 1
-    for leaf in tree.iter_leaves():
-        leaf.name = "sp"+str(nsp)
-        nsp += 1
+    if spmodel == "SGD":
+        nsp = 1
+        for leaf in tree.iter_leaves():
+            leaf.name = "sp"+str(nsp)
+            nsp += 1
     
     return tree
 
@@ -309,6 +272,13 @@ def ubranch_mutation(node, mu, tau = 0, seed = None):
         seperated for to be considered distinct species
     seed : int
         None by default, set the seed for mutation random events.
+        ## FIX with Dependent-patch ##
+        When calling a global simulation pipeline with ecophylo.simulate()
+        genealogy to phylogeny the RNG vector is called at the beginning
+        of toPhylo() so that it's not reset each time ubranch_mutation() is
+        called. If you want to check on the behaviour of ubranch_mutation() 
+        with seeding, you can set it and it will reset the RNG vector each
+        time ubran_mutation() is run.
         
     Returns
     -------
@@ -341,10 +311,10 @@ def ubranch_mutation(node, mu, tau = 0, seed = None):
         raise ValueError('tau must be a float superior or equal to 0')
     if seed is not None and not isinstance(seed, int):
         raise ValueError('seed must be an integer')
+    if seed is not None:
+        np.random.seed(seed) # if you put a seed in umut_branch() it means you want to check its behavior so reset seed
     
     lambd = max((node.dist - tau), 0) * mu 
-    # set the seed
-    np.random.seed(seed)
     rb = np.random.poisson(lambd) 
     return rb >= 1 # parametrize the 1 by a value n
 
