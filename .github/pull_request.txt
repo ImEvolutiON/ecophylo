@@ -1,0 +1,27 @@
+# Pull Request — First patch for phylogeny algorithm
+
+## Summary
+
+Patches include:
+
+* removal of UNTB phylogeny transformation
+* adapted sumstat.py so it can read sfs of the tree in a genealogy format
+
+---
+
+## Context
+
+Patches concern:
+
+* phylogeny logic in phylogen.py file
+* sfs retrieval logic in sumstat.py file
+This first patch is only pioneer so one (especially me and my phd) could use the UNTB and have correct sfs.
+
+---
+
+## Changes
+
+1/ Total removal of "if spmodel == 'NTB': block"
+2/ Changed the sumstat.py with a (hopefully) temporary argument "spmodel" ; if so, a loop iter through leaves, get their "sp" tag and a Counter counts how many tag is present. Get only the values of the dict and return a list (sfs)
+
+---
