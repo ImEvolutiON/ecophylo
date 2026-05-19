@@ -108,7 +108,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
         raise ValueError('tree must have a class TreeNode')
     if mu < 0 or mu > 1 or not isinstance(mu, (int,float)):
         raise ValueError('mu must be a float between 0 and 1')
-    if not spmodel in ['SGD', 'NTB']:
+    if not spmodel in ['loose', 'NTB']:
         raise ValueError(spmodel+' is not a correct model. '+
                 'spmodel must be either "SGD" or "NTB" string')
     if not isinstance(force_ultrametric, bool):
@@ -121,7 +121,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
     # init some parameters
     innerNodeIndex = 0
     nIndsORI = 0
-    spID = 0
+    spID = 1
     demeID = 0
     ndeme = 0
     
@@ -160,6 +160,21 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
                         leaf.sp = spID
                     except AttributeError:
                         leaf.add_features(sp=1)
+            # print(f"node {innerNodeIndex} --> sp: {node.sp}")
+        else :
+            umut = ubranch_mutation(node= node, mu= mu, tau= tau)
+            if umut :
+                spID +=1
+                node.sp = spID
+    
+    from collections import Counter
+    
+    leaf_names = []
+    for leaf in tree.iter_leaves():
+        leaf_names.append(leaf.sp)
+    res = len(Counter(leaf_names).keys())
+    print(f'spCount = {res}')
+    
     
     #===================================
     # PHYLOGENY WITH PARAPHYLETIC GROUPS
@@ -181,63 +196,138 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
     #if spmodel == "NTB":
 
         
-    if spmodel == "SGD" : 
+    if spmodel == "loose" : 
 
+        traversed_nodes = set()
+        
         for leaf in tree.iter_leaves():
-            popInd = [0] * (ndeme + 1)
-            popInd[leaf.deme] += 1
+            popInd = [0] * (ndeme+1)
+            popInd[leaf.deme] = 1
             leaf.popInd = popInd
-
-        traversedNodes = set()
+            
+            # Here we built a binary matrice indicating in which deme the leaf is present and absent
+            
         for node in tree.traverse("preorder"):
-            if node not in traversedNodes:
-                if not node.is_leaf():
-                    children = node.get_children()
-                    if len(children) != 2:
-                        raise ValueError("The algorithm does not know how to"+
-                                         " deal with non dichotomic trees!")
-                    csp1 = set()
-                    for j in children[0].iter_leaves():
-                        csp1.add(j.sp)
-                    csp2 = set()
-                    for j in children[1].iter_leaves():
-                        csp2.add(j.sp)
-                    common = csp1.intersection(csp2)  # compares species label between children
-                    if len(common) > 0:  # if paraphyletic
-                        if not node.is_root():
-                            upNode = node.up  # parent
-                            newLeaf = node.get_farthest_leaf()  # finds new leaf
-                            newDist = newLeaf[1] + node.dist
-
-                            mergedLeaves = ""
-                            popInd = [0] * (ndeme + 1)
-
-                            for childnode in node.traverse():
-                                traversedNodes.add(childnode)
-                                if childnode.is_leaf():
-                                    mergedLeaves = mergedLeaves+" "+childnode.name
-                                    popInd[childnode.deme] += 1
-                            node.detach()
-                            upNode.add_child(newLeaf[0], newLeaf[0].name, newDist)
-                            newLeaf[0].mergedInd = mergedLeaves
-                            newLeaf[0].popInd = popInd
-                    
-                        else:
-                            # populate "mergedInd" feature for future SFS
-                            mergedLeaves = ""
-                            popInd = [0] * (ndeme + 1)
-                            for l in node.iter_leaves():
-                                mergedLeaves = mergedLeaves+" "+l.name
-                                popInd = [a+b for a, b in zip(l.popInd, popInd)]
-                            # collapse the subtree
-                            newLeaf = tree.get_farthest_leaf()
-                            for child in tree.get_children():
-                                child.detach()
-                                node.add_child(newLeaf[0], newLeaf[0].name, newLeaf[1])
+            if not node.is_leaf() and node not in traversed_nodes:
+                children = node.get_children()
+                if len(children) != 2:
+                    raise ValueError("The algorithm does not know how to deal with non dichotomic trees.")
+                left_species = {leaf.sp for leaf in children[0].iter_leaves()}
+                right_species = {leaf.sp for leaf in children[1].iter_leaves()}
+            
+                if not (left_species & right_species):
+                    continue
+            
+                # Non-monophyletic group detected
+                
+                parent = node.up
+                collapse_node = node
+                traversed_nodes.update(collapse_node.traverse())
+                
+                new_leaf, new_leaf_dist = node.get_farthest_leaf()
+                new_dist = new_leaf_dist + (collapse_node.dist if parent is not None else 0)
     
-                            # actualize "mergedInd" feature of new leaf
-                            newLeaf[0].mergedInd = mergedLeaves
-                            newLeaf[0].popInd = popInd
+                subtree_leaves = list(collapse_node.iter_leaves())
+                
+                merged_ind = " ".join(leaf.name for leaf in subtree_leaves) # a string containing all merged individuals
+                
+                popInd = [0]*(ndeme+1) # a string containing all merged individuals but separated in demes
+                for leaf in subtree_leaves:
+                    popInd[leaf.deme] += 1
+                new_leaf.popInd = popInd
+                new_leaf.mergedInd = merged_ind
+                
+                collapse_node.detach()
+                
+                if parent is None:
+                    for child in list(tree.get_children()):
+                        child.detach()
+                
+                    tree.add_child(
+                        child = new_leaf,
+                        name = new_leaf.name, # name of the collapsed species
+                        dist = new_dist
+                        )      
+                else:
+                    parent.add_child(
+                        child = new_leaf,
+                        name = new_leaf.name, # name of the collapsed species
+                        dist = new_dist
+                        )
+        
+        
+    if spmodel == "lacy" :
+        
+        traversed_nodes = set()
+        
+        for leaf in tree.iter_leaves():
+            popInd = [0] * (ndeme+1)
+            popInd[leaf.deme] = 1
+            leaf.popInd = popInd
+        
+    # if spmodel == "phenotypic" :
+        
+    # if spmodel == "paraphyletic" :
+        
+    # if spmodel == "genealogy" :
+        
+        
+
+    #     for leaf in tree.iter_leaves():
+    #         popInd = [0] * (ndeme + 1)
+    #         popInd[leaf.deme] += 1
+    #         leaf.popInd = popInd
+
+    #     traversedNodes = set()
+    #     for node in tree.traverse("preorder"):
+    #         if node not in traversedNodes:
+    #             if not node.is_leaf():
+    #                 children = node.get_children()
+    #                 if len(children) != 2:
+    #                     raise ValueError("The algorithm does not know how to"+
+    #                                      " deal with non dichotomic trees!")
+    #                 csp1 = set()
+    #                 for j in children[0].iter_leaves():
+    #                     csp1.add(j.sp)
+    #                 csp2 = set()
+    #                 for j in children[1].iter_leaves():
+    #                     csp2.add(j.sp)
+    #                 common = csp1.intersection(csp2)  # compares species label between children
+    #                 if len(common) > 0:  # if paraphyletic
+    #                     if not node.is_root():
+    #                         upNode = node.up  # parent
+    #                         newLeaf = node.get_farthest_leaf()  # finds new leaf
+    #                         newDist = newLeaf[1] + node.dist
+
+    #                         mergedLeaves = ""
+    #                         popInd = [0] * (ndeme + 1)
+
+    #                         for childnode in node.traverse():
+    #                             traversedNodes.add(childnode)
+    #                             if childnode.is_leaf():
+    #                                 mergedLeaves = mergedLeaves+" "+childnode.name
+    #                                 popInd[childnode.deme] += 1
+    #                         node.detach()
+    #                         upNode.add_child(newLeaf[0], newLeaf[0].name, newDist)
+    #                         newLeaf[0].mergedInd = mergedLeaves
+    #                         newLeaf[0].popInd = popInd
+                    
+    #                     else:
+    #                         # populate "mergedInd" feature for future SFS
+    #                         mergedLeaves = ""
+    #                         popInd = [0] * (ndeme + 1)
+    #                         for l in node.iter_leaves():
+    #                             mergedLeaves = mergedLeaves+" "+l.name
+    #                             popInd = [a+b for a, b in zip(l.popInd, popInd)]
+    #                         # collapse the subtree
+    #                         newLeaf = tree.get_farthest_leaf()
+    #                         for child in tree.get_children():
+    #                             child.detach()
+    #                             node.add_child(newLeaf[0], newLeaf[0].name, newLeaf[1])
+    
+    #                         # actualize "mergedInd" feature of new leaf
+    #                         newLeaf[0].mergedInd = mergedLeaves
+    #                         newLeaf[0].popInd = popInd
     
     if force_ultrametric: # TODO : add is.ultramtric from ete3
         tree_dist = tree.get_farthest_leaf()[1]
@@ -252,7 +342,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
             leaf.name = "sp"+str(nsp)
             nsp += 1
     
-    return tree
+    return tree, res
 
 
 def ubranch_mutation(node, mu, tau = 0, seed = None):
