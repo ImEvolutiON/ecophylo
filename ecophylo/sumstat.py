@@ -14,7 +14,7 @@ Functions :
 
 import numpy as np
 
-def getAbund(tree, samples = None, spmodel = None):
+def getAbund(tree, samples = None, spmodel = "loose"):
     """
     
     Parameters
@@ -65,7 +65,7 @@ def getAbund(tree, samples = None, spmodel = None):
         leaf_names = [leaf.sp for leaf in tree.iter_leaves()]
         sfs = list(Counter(leaf_names).values())
         
-    elif spmodel == "SGD":
+    elif spmodel in ("loose", "lacy"):
         for leaf in tree.iter_leaves():
             try:
                 inds = leaf.mergedInd.lstrip(" ") # remove 1st space
@@ -76,7 +76,7 @@ def getAbund(tree, samples = None, spmodel = None):
         sfs.extend(abund)
 
     else:
-        raise Exception('spmodel should be NTB or SGD')
+        raise Exception('spmodel should be loose or lacy')
         # think about catching error when phylogeny has only 1 sp
         
     if samples != None and sum(sfs) != samples:
@@ -128,7 +128,7 @@ def getDeme(tree, div = False):
     for leaf in tree.iter_leaves():
         try:
             indiv.append(leaf.popInd)
-        except AttribueError :
+        except AttributeError :
             indiv.append(1)
     if div:
         indiv = np.array(indiv)

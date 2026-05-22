@@ -194,8 +194,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
     # - remove this block
     #
     #if spmodel == "NTB":
+    
 
-        
     if spmodel == "loose" : 
 
         traversed_nodes = set()
@@ -224,18 +224,23 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
                 collapse_node = node
                 traversed_nodes.update(collapse_node.traverse())
                 
-                new_leaf, new_leaf_dist = node.get_farthest_leaf()
-                new_dist = new_leaf_dist + (collapse_node.dist if parent is not None else 0)
-    
                 subtree_leaves = list(collapse_node.iter_leaves())
-                
                 merged_ind = " ".join(leaf.name for leaf in subtree_leaves) # a string containing all merged individuals
-                
                 popInd = [0]*(ndeme+1) # a string containing all merged individuals but separated in demes
                 for leaf in subtree_leaves:
                     popInd[leaf.deme] += 1
-                new_leaf.popInd = popInd
-                new_leaf.mergedInd = merged_ind
+                
+                new_leaf, new_leaf_dist = collapse_node.get_farthest_leaf()
+                new_dist = new_leaf_dist + (collapse_node.dist if parent is not None else 0) # if parent is the root it's None, so dist = 0
+
+    
+                replacement_node = type(tree)()
+
+                replacement_node.name = new_leaf.name
+                replacement_node.dist = new_dist
+                replacement_node.popInd = popInd
+                replacement_node.mergedInd = merged_ind
+                replacement_node.sp = new_leaf.sp
                 
                 collapse_node.detach()
                 
@@ -243,19 +248,17 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
                     for child in list(tree.get_children()):
                         child.detach()
                 
-                    tree.add_child(
-                        child = new_leaf,
-                        name = new_leaf.name, # name of the collapsed species
-                        dist = new_dist
-                        )      
+                    tree.add_child(replacement_node)      
                 else:
-                    parent.add_child(
-                        child = new_leaf,
-                        name = new_leaf.name, # name of the collapsed species
-                        dist = new_dist
-                        )
-        
-        
+                    parent.add_child(replacement_node)
+                    
+                # There's a float miscalculation that breaks the ultrametricity of an order of 1 float unity (~1e-16)
+                # It should be invisible to most softwares. But still. The "force_ultrametricity" part of the code
+                # doesn't work but it can be improved and maybe will fix the ultrametricity ? I put a check just before
+                # return tree that check if ultrametricity is broken at a bigger threshold (1e-12) it will only print in the
+                # logs so be careful !
+                
+    
     if spmodel == "lacy" :
         
         traversed_nodes = set()
@@ -264,85 +267,94 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
             popInd = [0] * (ndeme+1)
             popInd[leaf.deme] = 1
             leaf.popInd = popInd
-        
+            
+        for node in tree.traverse("postorder"):
+            if not node.is_leaf() and node not in traversed_nodes:
+                children = node.get_children()
+                if len(children) != 2:
+                    raise ValueError("The algorithm does not know how to deal with non dichotomic trees.")
+                left_species = children[0].sp if hasattr(children[0], "sp") else {leaf.sp for leaf in children[0].iter_leaves()} # it may happen that node is an inner node, and children are inner nodes too. Neither of them have sp attribute
+                right_species = children[1].sp if hasattr(children[1], "sp") else {leaf.sp for leaf in children[1].iter_leaves()} # we then need to check the sp attribute of leaves attached to children.
+                
+                if left_species != right_species :
+                    continue
+                
+                # Monophyletic detected ; either this is the first iteration so children are true leaves, eitheir this is n-th iteration and
+                # children were collapsed (now called false-leaves) and already have popInd and mergedInd values that we need to compute and
+                # not simply increment as this was the case in preorder for the "loose" definition
+                
+                parent = node.up
+                collapse_node = node
+                traversed_nodes.update(collapse_node.traverse())
+                
+                replacement_node = type(tree)()
+                
+                new_leaf, new_leaf_dist = collapse_node.get_farthest_leaf()
+                new_dist = new_leaf_dist + (collapse_node.dist if parent is not None else 0) # if parent is the root it's None, so dist = 0
+                    
+                merged_ind = " ".join(child.mergedInd if hasattr(child, "mergedInd") else child.name for child in collapse_node.get_children())
+                popInd = [0]*(ndeme+1)
+                for leaf in collapse_node.get_children(): 
+                    for i in range(ndeme+1):
+                        popInd[i] += leaf.popInd[i] # sum of both leaves
+                
+                replacement_node.name = new_leaf.name
+                replacement_node.dist = new_dist
+                replacement_node.popInd = popInd
+                replacement_node.mergedInd = merged_ind
+                replacement_node.sp = new_leaf.sp
+
+                collapse_node.detach()
+                
+                if parent is None:
+                    for child in list(tree.get_children()):
+                        child.detach()
+                
+                    tree.add_child(replacement_node)      
+                else:
+                    parent.add_child(replacement_node)
+                    
+                
     # if spmodel == "phenotypic" :
         
     # if spmodel == "paraphyletic" :
         
     # if spmodel == "genealogy" :
         
-        
-
-    #     for leaf in tree.iter_leaves():
-    #         popInd = [0] * (ndeme + 1)
-    #         popInd[leaf.deme] += 1
-    #         leaf.popInd = popInd
-
-    #     traversedNodes = set()
-    #     for node in tree.traverse("preorder"):
-    #         if node not in traversedNodes:
-    #             if not node.is_leaf():
-    #                 children = node.get_children()
-    #                 if len(children) != 2:
-    #                     raise ValueError("The algorithm does not know how to"+
-    #                                      " deal with non dichotomic trees!")
-    #                 csp1 = set()
-    #                 for j in children[0].iter_leaves():
-    #                     csp1.add(j.sp)
-    #                 csp2 = set()
-    #                 for j in children[1].iter_leaves():
-    #                     csp2.add(j.sp)
-    #                 common = csp1.intersection(csp2)  # compares species label between children
-    #                 if len(common) > 0:  # if paraphyletic
-    #                     if not node.is_root():
-    #                         upNode = node.up  # parent
-    #                         newLeaf = node.get_farthest_leaf()  # finds new leaf
-    #                         newDist = newLeaf[1] + node.dist
-
-    #                         mergedLeaves = ""
-    #                         popInd = [0] * (ndeme + 1)
-
-    #                         for childnode in node.traverse():
-    #                             traversedNodes.add(childnode)
-    #                             if childnode.is_leaf():
-    #                                 mergedLeaves = mergedLeaves+" "+childnode.name
-    #                                 popInd[childnode.deme] += 1
-    #                         node.detach()
-    #                         upNode.add_child(newLeaf[0], newLeaf[0].name, newDist)
-    #                         newLeaf[0].mergedInd = mergedLeaves
-    #                         newLeaf[0].popInd = popInd
-                    
-    #                     else:
-    #                         # populate "mergedInd" feature for future SFS
-    #                         mergedLeaves = ""
-    #                         popInd = [0] * (ndeme + 1)
-    #                         for l in node.iter_leaves():
-    #                             mergedLeaves = mergedLeaves+" "+l.name
-    #                             popInd = [a+b for a, b in zip(l.popInd, popInd)]
-    #                         # collapse the subtree
-    #                         newLeaf = tree.get_farthest_leaf()
-    #                         for child in tree.get_children():
-    #                             child.detach()
-    #                             node.add_child(newLeaf[0], newLeaf[0].name, newLeaf[1])
     
-    #                         # actualize "mergedInd" feature of new leaf
-    #                         newLeaf[0].mergedInd = mergedLeaves
-    #                         newLeaf[0].popInd = popInd
-    
-    if force_ultrametric: # TODO : add is.ultramtric from ete3
-        tree_dist = tree.get_farthest_leaf()[1]
-        for leaf in tree.iter_leaves():
-            dst = tree.get_distance(leaf)
-            if dst != tree_dist:
-                leaf.dist += tree_dist - dst
+    if force_ultrametric: # TODO : add is.ultramtric from ete3, maybe this will work for float loss
+         tree_dist = tree.get_farthest_leaf()[1]
+         for leaf in tree.iter_leaves():
+             dst = tree.get_distance(leaf)
+             if dst != tree_dist:
+                 leaf.dist += tree_dist - dst
 
-    if spmodel == "SGD":
+
+    if spmodel in ("loose", "lacy"):
         nsp = 1
         for leaf in tree.iter_leaves():
             leaf.name = "sp"+str(nsp)
             nsp += 1
+            
+            
+    # SECURITY CHECK FOR ULTRAMETRICITY FLOAT LOSS
+            
+    ages = [tree.get_distance(leaf) for leaf in tree.iter_leaves()]
+    delta_abs = max(ages) - min(ages)
+    delta_rel = delta_abs / max(ages) if max(ages) else 0.0
     
-    return tree, res
+    if delta_rel > 1e-12:
+        print("\n==============================================================================================")
+        print("ULTRAMETRICITY BROKEN AT A 1e-12 ORDER (float error should broke at a 1e-16 order, that's weird)")
+        print("================================================================================================")
+        print("tips:", len(ages), " species")
+        print("min:", min(ages))
+        print("max:", max(ages))
+        print("delta abs:", delta_abs)
+        print("delta rel:", delta_rel)
+    
+    
+    return tree
 
 
 def ubranch_mutation(node, mu, tau = 0, seed = None):
