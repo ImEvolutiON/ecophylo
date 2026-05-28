@@ -132,6 +132,10 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
         except AttributeError:
             node.add_features(sp=1)
         try:
+            node.mut
+        except AttributeError:
+            node.add_features(mut="")
+        try:
             node.deme
         except AttributeError:
             node.add_features(deme=1)
@@ -155,6 +159,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
                 # print(f"Speciation event @ node {node.name}")
                 spID += 1
                 node.sp = spID
+                node.mut = "*"
                 for leaf in node:
                     try:
                         leaf.sp = spID
@@ -166,6 +171,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
             if umut :
                 spID +=1
                 node.sp = spID
+                node.mut = "*"
     
     from collections import Counter
     
@@ -270,12 +276,15 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
             
         for node in tree.traverse("postorder"):
             if not node.is_leaf() and node not in traversed_nodes:
+                # print(tree.get_ascii(attributes=["mut", "name"], show_internal=True))
+                # print("\n" + "="*80)
+                # print(f"\033[1;32mCURRENT NODE: {node.name}\033[0m")
+                # print("="*80)
                 children = node.get_children()
                 if len(children) != 2:
                     raise ValueError("The algorithm does not know how to deal with non dichotomic trees.")
-                left_species = children[0].sp if hasattr(children[0], "sp") else {leaf.sp for leaf in children[0].iter_leaves()} # it may happen that node is an inner node, and children are inner nodes too. Neither of them have sp attribute
-                right_species = children[1].sp if hasattr(children[1], "sp") else {leaf.sp for leaf in children[1].iter_leaves()} # we then need to check the sp attribute of leaves attached to children.
-                
+                left_species = {leaf.sp for leaf in children[0].iter_leaves()} # it may happen that node is an inner node, and children are inner nodes too. Neither of them have sp attribute
+                right_species = {leaf.sp for leaf in children[1].iter_leaves()} # we then need to check the sp attribute of leaves attached to children.
                 if left_species != right_species :
                     continue
                 
@@ -314,6 +323,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
                 else:
                     parent.add_child(replacement_node)
                     
+                                    
                 
     # if spmodel == "phenotypic" :
         
