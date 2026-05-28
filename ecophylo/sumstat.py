@@ -58,21 +58,15 @@ def getAbund(tree, samples = None, spmodel = "loose"):
 
     abund = list()
     sfs = list()
-    
-    from collections import Counter
-    
-    if spmodel == "NTB":        
-        leaf_names = [leaf.sp for leaf in tree.iter_leaves()]
-        sfs = list(Counter(leaf_names).values())
         
-    elif spmodel in ("loose", "lacy"):
+    if spmodel in ("loose", "lacy"):
         for leaf in tree.iter_leaves():
             try:
                 inds = leaf.mergedInd.lstrip(" ") # remove 1st space
                 inds = list(inds.split(" ")) # strip on spaces
                 abund.append(len(inds)) # get length 
             except AttributeError:
-                abund.append(1)
+                abund.append(1) #shouldn't this be a list so append([1]) ?
         sfs.extend(abund)
 
     else:

@@ -14,7 +14,7 @@ Functions :
 
 import numpy as np
 
-def toPhylo(tree, mu, tau = 0, spmodel = "SGD", 
+def toPhylo(tree, mu, tau = 0, spmodel = "loose", 
             force_ultrametric = True, seed = None):
     """
     Merge branches of genealogy following speciation model of the user choice 
@@ -108,9 +108,9 @@ def toPhylo(tree, mu, tau = 0, spmodel = "SGD",
         raise ValueError('tree must have a class TreeNode')
     if mu < 0 or mu > 1 or not isinstance(mu, (int,float)):
         raise ValueError('mu must be a float between 0 and 1')
-    if not spmodel in ['loose', 'NTB']:
+    if not spmodel in ['loose', 'lacy']:
         raise ValueError(spmodel+' is not a correct model. '+
-                'spmodel must be either "SGD" or "NTB" string')
+                'spmodel must be either "loose" or "lacy" string')
     if not isinstance(force_ultrametric, bool):
         raise ValueError('force_ultrametric must be a boolean')
     if seed is not None and not isinstance(seed, int):
