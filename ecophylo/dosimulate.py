@@ -238,8 +238,8 @@ def dosimuls(nsim, samples, deme_sizes, mu, tau = 0, spmodel = "SGD",
                     params.loc[i,(f'migr_t{migr_times[tmp_p[1]]}')] = \
                         migr[tmp_p[1]]
             # Save sumstat
-            abund.append(sumstat.getAbund(phylo))
-            diver.append(sumstat.getDeme(phylo, div = True))
+            abund.append(sumstat.getAbund(phylo, spmodel = spmodel))
+            diver.append(sumstat.getDeme(phylo, spmodel = spmodel, div = True))
             # Save tree
             trees += phylo.write() + "\n"
             failed = 0

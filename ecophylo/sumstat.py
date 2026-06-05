@@ -68,7 +68,12 @@ def getAbund(tree, samples = None, spmodel = "loose"):
             except AttributeError:
                 abund.append(1) #shouldn't this be a list so append([1]) ?
         sfs.extend(abund)
-
+    elif spmodel in ("genealogy", "broken-NTB"): #CHANGER ICI GENEALOGY MARCHE PAS
+        from collections import Counter
+        leaf_names = []
+        for leaf in tree.iter_leaves():
+            leaf_names.append(leaf.sp)
+        sfs = list(Counter(leaf_names).values())
     else:
         raise Exception('spmodel should be loose or lacy')
         # think about catching error when phylogeny has only 1 sp
@@ -78,7 +83,7 @@ def getAbund(tree, samples = None, spmodel = "loose"):
         # TODO : modify error with a better check here
     return sfs
 
-def getDeme(tree, div = False):
+def getDeme(tree, div = False, spmodel = "genealogy"):
     """
     
     Parameters
@@ -119,11 +124,28 @@ def getDeme(tree, div = False):
         raise ValueError('tree must have a class TreeNode')
     
     indiv = list()
-    for leaf in tree.iter_leaves():
-        try:
-            indiv.append(leaf.popInd)
-        except AttributeError :
-            indiv.append(1)
+    
+    if spmodel in ("loose", "lacy"): 
+        for leaf in tree.iter_leaves():
+            try:
+                indiv.append(leaf.popInd)
+            except AttributeError :
+                indiv.append([1])
+    
+    elif spmodel in ("genealogy", "broken-NTB"):
+        sp_to_popInd = {}
+        for leaf in tree.iter_leaves():
+            sp = leaf.sp
+            if sp not in sp_to_popInd:
+                sp_to_popInd[sp] = leaf.popInd.copy()
+            else:
+                for i in range(len(leaf.popInd)):
+                    sp_to_popInd[sp][i] += leaf.popInd[i]
+        indiv = list(sp_to_popInd.values())
+    
+    else:
+        raise ValueError("spmodel should be loose, lacy or genealogy")
+    
     if div:
         indiv = np.array(indiv)
         indiv = [sum(indiv[:,i] > 0) for i in range(indiv.shape[1])]

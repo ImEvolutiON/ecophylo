@@ -108,7 +108,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
         raise ValueError('tree must have a class TreeNode')
     if mu < 0 or mu > 1 or not isinstance(mu, (int,float)):
         raise ValueError('mu must be a float between 0 and 1')
-    if not spmodel in ['loose', 'lacy']:
+    if not spmodel in ['loose', 'lacy', 'genealogy', 'broken-NTB']:
         raise ValueError(spmodel+' is not a correct model. '+
                 'spmodel must be either "loose" or "lacy" string')
     if not isinstance(force_ultrametric, bool):
@@ -179,7 +179,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
     for leaf in tree.iter_leaves():
         leaf_names.append(leaf.sp)
     res = len(Counter(leaf_names).keys())
-    print(f'spCount = {res}')
+    #print(f'spCount = {res}')
     
     
     #===================================
@@ -199,8 +199,20 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
     # - adapt the sumstat.py, and try to remove the needed "spmodel"
     # - remove this block
     #
-    #if spmodel == "NTB":
+    if spmodel == "broken-NTB":
+        nsp = 1
+        for leaf in tree.iter_leaves():
+            popInd = [0] * (ndeme+1)
+            popInd[leaf.deme] = 1
+            leaf.popInd = popInd
+            leaf.name = "sp"+str(nsp)
+            nsp += 1
     
+    if spmodel == "genealogy":
+        for leaf in tree.iter_leaves():
+            popInd = [0] * (ndeme+1)
+            popInd[leaf.deme] = 1
+            leaf.popInd = popInd
 
     if spmodel == "loose" : 
 
@@ -215,12 +227,18 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
             
         for node in tree.traverse("preorder"):
             if not node.is_leaf() and node not in traversed_nodes:
+                # print(tree.get_ascii(attributes=["mut", "name"], show_internal=True))
+                # print("\n" + "="*80)
+                # print(f"\033[1;32mCURRENT NODE: {node.name}\033[0m")
+                # print("="*80)
                 children = node.get_children()
                 if len(children) != 2:
                     raise ValueError("The algorithm does not know how to deal with non dichotomic trees.")
                 left_species = {leaf.sp for leaf in children[0].iter_leaves()}
                 right_species = {leaf.sp for leaf in children[1].iter_leaves()}
-            
+                # print(f"children = {[c.name for c in children]}")
+                # print(f"left_species = {left_species}")
+                # print(f"right_species = {right_species}")
                 if not (left_species & right_species):
                     continue
             
@@ -257,6 +275,9 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
                     tree.add_child(replacement_node)      
                 else:
                     parent.add_child(replacement_node)
+            # else:
+            #     print(tree.get_ascii(attributes=["mut", "name"], show_internal=True))
+            #     print("END OF PREORDER")
                     
                 # There's a float miscalculation that breaks the ultrametricity of an order of 1 float unity (~1e-16)
                 # It should be invisible to most softwares. But still. The "force_ultrametricity" part of the code
