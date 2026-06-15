@@ -998,7 +998,7 @@ def sample(lower, upper, distr = "uniform", seed = None):
     if distr == "uniform":
         p = random.uniform(lower,upper)
     elif distr == "log_unif":
-        p = loguniform(lower, upper).rvs()
+        p = loguniform(lower, upper).rvs(random_state = int(seed) if seed is not None else None)
     else :
         raise ValueError("This distribution is not implemented")
     return p 

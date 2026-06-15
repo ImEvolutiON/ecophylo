@@ -1,3 +1,97 @@
+# Pull Request — Second patch for quick rng fix of logunif function not using the seed
+
+## Summary
+
+Patch include:
+
+* addition of argument to take seed into account of logunif law
+
+---
+
+## Context
+
+Patch concerns:
+
+* sample function in dosimulate.py file
+
+---
+
+## Changes
+
+1/ addition of argument random_state = int(seed) in .rvs()
+
+---
+
+# Reproducibility
+
+Here's a script to reproduce the error with previous versions of ecophylo :
+SEED = 12345
+N = 10
+
+print("===== TEST uniform =====")
+
+uniform_values = []
+
+for i in range(N):
+
+    x = ecophylo.sample(
+        lower=0.0,
+        upper=1.0,
+        distr="uniform",
+        seed=SEED
+    )
+
+    uniform_values.append(x)
+
+print(uniform_values)
+print("All identical:", len(set(uniform_values)) == 1)
+
+
+print("\n===== TEST log_unif =====")
+
+log_values = []
+
+for i in range(N):
+
+    x = ecophylo.sample(
+        lower=1e-7,
+        upper=1e-3,
+        distr="log_unif",
+        seed=SEED
+    )
+
+    log_values.append(x)
+
+print(log_values)
+print("All identical:", len(set(log_values)) == 1)
+
+
+print("\n===== TEST log_unif with numpy reset =====")
+
+log_values_np_reset = []
+
+for i in range(N):
+
+    np.random.seed(SEED)
+
+    x = ecophylo.sample(
+        lower=1e-7,
+        upper=1e-3,
+        distr="log_unif",
+        seed=SEED
+    )
+
+    log_values_np_reset.append(x)
+
+print(log_values_np_reset)
+print("All identical:", len(set(log_values_np_reset)) == 1)
+
+
+
+------
+
+
+
 # Pull Request — First patch for phylogeny algorithm
 
 ## Summary
@@ -25,3 +119,5 @@ This first patch is only pioneer so one (especially me and my phd) could use the
 2/ Changed the sumstat.py with a (hopefully) temporary argument "spmodel" ; if so, a loop iter through leaves, get their "sp" tag and a Counter counts how many tag is present. Get only the values of the dict and return a list (sfs)
 
 ---
+
+
