@@ -4,6 +4,7 @@ Created on Fri Nov 6 13:20:00 2020
 
 @author : Maxime Jaunatre <maxime.jaunatre@yahoo.fr>
 @author : Elizabeth Bathelemy <barthelemy.elizabeth@gmail.com>
+@author : Théo Driancourt <imevolutionmodding@gmail.com>
 
 Functions : 
     toPhylo
@@ -14,8 +15,8 @@ Functions :
 
 import numpy as np
 
-def toPhylo(tree, mu, tau = 0, spmodel = "loose", 
-            force_ultrametric = True, seed = None):
+def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic", 
+            force_ultrametric = True, seed = None, debug = False):
     """
     Merge branches of genealogy following speciation model of the user choice 
     after sprinkling mutation events over the branches of simulated genealogies
@@ -27,9 +28,12 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
     mutation rate and 𝐵 is the length of the branch. 
     
     The descendants stemming from a branch with at least one mutation define
-    a genetically distinct clade. Since an extant species should be a 
-    monophyletic genetic clade distinct from other species, all paraphyletic 
-    clades of haplotypes at present are merged to form a single species. 
+    a genetically distinct clade. These clades can be paraphyletic because of
+    ancestral retention. Either the user choose to accept paraphyletic gene
+    histories ('spmodel = phenotypic'), or to impose monophyly. For every
+    gene tree exist a species partition satisfying either A or B. These
+    differences in species tree can be compared to the taxonomist opposition
+    between splitter and lumper.
     
     Parameters
     ----------
@@ -40,19 +44,53 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
     tau = 0 : float
         The minimum number of generations monophyletic lineages have to be 
         seperated for to be considered distinct species
-    spmodel = "SGD" : string
-        the type of speciation model to implement. Default if "SGD" and 
-        corresponds to a generalisation of the Speciation by Genetic 
-        Differentiation. Note that setting tau to 1 will equate to the SGD 
-        model as described in Manceau et al. 2015.
-        "NTB" corresponds to the speciation model as described in Hubbell 2001, 
-        in which point mutations instantenously give rise to new species.
+        
+        
+    spmodel = {"genealogy", "loose", "lacy", "phenotypic"}
+        default = "phenotypic" : string
+
+        - "genealogy"
+        The complete genealogy is retained after mutation sprinkling.
+        Cannot be coerced in a species tree.
+        
+        - "loose"
+        The complete genealogy is collapsed in a set of monophyletic clades
+        according to the "loose species partition" from Manceau, Lambert 2018.
+        The loose species partition aims to respect heterotypy between species,
+        individuals in different species are genetically different for each
+        species cluster. This is the finest partition of the present-day
+        individuals as it usually needs to merge different clades : individuals
+        can have different labels within a species. This is equivalent to
+        lumpers.
+        
+        - "lacy"
+        The complete genealogy is collapsed in a set of monophyletic clades
+        according to the "lacy species partition" from Manceau, Lambert 2018.
+        The lacy species partition aims to respect homotypy within species,
+        individuals within the same species are genetically identical for each
+        species cluster. This is the coarsest partition of the present-day
+        individuals as it usually needs to XXXXX : individuals with the same
+        labels can be in different species. This is equivalent to splitters.
+        
+        - "phenotypic"
+        The complete genealogy is collapsed in a set of monophyletic lineages
+        as a "label-tree" rather than a species tree. This is equivalent to
+        Hubbell's UNTB and associated research (Jabot & Chave 2009). See more
+        in Manceau, Lambert 2018 but note what we call "XXXXX" is analogous to
+        what they call "phenotypic", implying phenotypes.
+
     force_ultrametric = True : bool
         Whether or note to force phylogenetic tree ultrametry 
     seed = None : int
         None by default, set the seed for mutation random events.
+    debug = False : bool
+        change the return function, returns a tuple containing the phylogeny,
+        the number of species before the partitioning, the number of species
+        after the partitioning, the number of singleton before the partitioning
+        the number of singleton after the partitioning, the tmrca of the tree
+        before the partitioning, the tmrca after the partitioning
 
-    Returns
+    Output
     -------
     Tree Node (ete3 class)
         A phylogeny representing the phylogenetic relationships among species 
@@ -62,57 +100,20 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
 
     Examples
     --------
-    >>> from ete3 import Tree
-    >>> tree = Tree('(((A:5,(B:3, C:3))1:2,(D:2, E:2)1:5)1:2, (F:3, G:3)1:6);')
-    >>> print(tree)
-    <BLANKLINE>
-             /-A
-          /-|
-         |  |   /-B
-         |   \-|
-       /-|      \-C
-      |  |
-      |  |   /-D
-    --|   \-|
-      |      \-E
-      |
-      |   /-F
-       \-|
-          \-G
-    >>> phylo = toPhylo(tree, 0.5, seed = 42)
-    >>> print(phylo)
-    <BLANKLINE>
-          /-sp1
-       /-|
-    --|   \-sp2
-      |
-       \-sp3
-    >>> import ecophylo as eco
-    >>> eco.getAbund(phylo, 7)
-    [3, 2, 2]
-    >>> phylo = toPhylo(tree, mu = 0.5, tau = 0.005, seed = 42)
-    >>> print(phylo)
-    <BLANKLINE>
-       /-sp1
-    --|
-       \-sp2
-    >>> phylo = toPhylo(tree, mu = 0.5, spmodel = "NTB", tau = 0.005, seed = 42)
-    >>> print(phylo)
-    <BLANKLINE>
-       /-sp1
-    --|
-       \-sp2
+    >>>
     """
     # Idiot proof
     if tree.__class__.__name__ != 'TreeNode' :
         raise ValueError('tree must have a class TreeNode')
     if mu < 0 or mu > 1 or not isinstance(mu, (int,float)):
         raise ValueError('mu must be a float between 0 and 1')
-    if not spmodel in ['loose', 'lacy', 'genealogy', 'broken-NTB']:
+    if not spmodel in ['loose', 'lacy', 'genealogy', 'phenotypic']:
         raise ValueError(spmodel+' is not a correct model. '+
-                'spmodel must be either "loose" or "lacy" string')
+                'spmodel must be either "loose", "lacy", "genealogy" or "phenotypic" string')
     if not isinstance(force_ultrametric, bool):
         raise ValueError('force_ultrametric must be a boolean')
+    if not isinstance(debug, bool):
+        raise ValueError('debug must be a boolean')
     if seed is not None and not isinstance(seed, int):
         raise ValueError('seed must be an integer')
     if seed is not None:
@@ -125,12 +126,12 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
     demeID = 0
     ndeme = 0
     
+    sp_origin = {1: tree}
+    tree_height = max(tree.get_distance(leaf) for leaf in tree.iter_leaves())
+    mutation_table = [] 
+    
     # mutation model on branches
     for node in tree.traverse("preorder"): # traverse les noeuds
-        try:
-            node.sp
-        except AttributeError:
-            node.add_features(sp=1)
         try:
             node.mut
         except AttributeError:
@@ -152,61 +153,269 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
                 ndeme += 1
             node.deme = int(name_deme[1])
             node.name = name_deme[0]
+            
+        is_leaf = node.is_leaf()
+        
+        # Inherit sp label from parent, if None, it means that we are at the
+        # root, we set it to 1 because preorder begins with the root. So we 
+        # don't allow mutation above the root (ubranch_mutation would return
+        # False anyway) and we don't label it as an internal node because
+        # node.up.sp doesn't exist for the root
+        if node.up is None:
+            node.add_features(sp=1)
+            continue
+        else:
+            node.add_features(sp=node.up.sp)
+        
+        umut, mut_from_parent = ubranch_mutation(node = node, mu = mu, tau = tau)
+        
+        if not umut:
+            continue
+        
+        # umut is True : new label overwritting
+        
+        parent_label = node.sp # get parent sp from node before overwritting it
+        spID += 1
+        node.sp = spID
+        node.mut = "*" # for debugging when printing the tree
+        sp_origin[spID] = node
+        
+        # Mutation age information
+        
+        parent_name = node.up.name
+        child_name = node.name
+        
+        parent_depth = tree.get_distance(node.up)  
+        mutation_depth = parent_depth + mut_from_parent
+       
+        mutation_coalescence_age = tree_height - mutation_depth
+        mutation_id = str(parent_name) + "->" + str(child_name)
+        
+        node.add_features(mutation_id = mutation_id, mut_from_parent = mut_from_parent, mutation_coalescence_age = mutation_coalescence_age)
+        
+        mutation_table.append({
+            "mutation_id": mutation_id,
+            "is_terminal": is_leaf,
+            "label": spID,
+            "parent_label": parent_label,
+            "mutation_coalescence_age": mutation_coalescence_age, # Lambert scenario c
+            "nearest_coalescence_age": None, # Lambert scenario a
+            "oldest_coalescence_age": None # Lambert scenario b
+            })
 
-        if not node.is_leaf():
-            umut = ubranch_mutation(node= node, mu= mu, tau= tau)
-            if umut:
-                # print(f"Speciation event @ node {node.name}")
-                spID += 1
-                node.sp = spID
-                node.mut = "*"
-                for leaf in node:
-                    try:
-                        leaf.sp = spID
-                    except AttributeError:
-                        leaf.add_features(sp=1)
-            # print(f"node {innerNodeIndex} --> sp: {node.sp}")
-        else :
-            umut = ubranch_mutation(node= node, mu= mu, tau= tau)
-            if umut :
-                spID +=1
-                node.sp = spID
-                node.mut = "*"
-    
-    from collections import Counter
-    
-    leaf_names = []
-    for leaf in tree.iter_leaves():
-        leaf_names.append(leaf.sp)
-    res = len(Counter(leaf_names).keys())
-    #print(f'spCount = {res}')
-    
-    
-    #===================================
-    # PHYLOGENY WITH PARAPHYLETIC GROUPS
-    #===================================
+    # Labelling is complete : we can compute Lambert scenarios a & b here
+    # 
+    # For each mutation event, a parent label gives rise to a derived label
+    # There's multiple outcomes possible : 
+    # - A derived label survives up until present
+    # - A derived label becomes a parent label by giving rise to a new derived label and exists in the present-day
+    # - A derived label becomes a parent label by giving rise to multiple new derived labels and only none of its descendants
+    #   in the present-day carry the label, existing only as an internal label.
     #
-    # it is necessary to find a way to represent the genealogy as a phylogeny
-    # else, LTT and any phylogenetic analysis would be biaised.
-    # As for now, integration of the UNTB is done only for present pattern
-    # emerging from past demography; there's a Counter in "sumstat" that gets
-    # the abundances per species : getAbund returns a correct sfs as
-    # paraphyly don't have impact on present patterns of species when you
-    # specify spmodel = "NTB". At least it shouldn't (TBD).
+    # Example, marked by a star all speciation events :
+    #                         ┌───────*purple─── purple_ind1
+    #                  ┌──────┤
+    #                  │      └───────────────── grey_ind1
+    #                  │           
+    #                  │      
+    #                  │                  ┌───── red_ind1
+    #          grey  ──┤             ┌*red┤
+    #                  │             │    └───── red_ind2
+    #                  │      ┌─*blue┤
+    #                  │      │      │        ┌─ yellow_ind1
+    #                  │      │      └*yellow─┤
+    #                  │      │               └─ yellow_ind2
+    #                  └──────┤
+    #                         │         ┌*green─ green_ind1
+    #                         │      ┌──┤
+    #                         │      │  └─────── grey_ind2
+    #                         └──────┤
+    #                                │  ┌─────── grey_ind3
+    #                                └──┤
+    #                                   └─────── grey_ind4
     #
-    # Still, what should be done for the next patch :
-    # - dev a new phylogenetic algorithm
-    # - adapt the sumstat.py, and try to remove the needed "spmodel"
-    # - remove this block
+    # The label "grey" still exists at the present-day because of ancestral retention, and gave rise to "green", "blue" and "purple" label
+    # The label "blue" label deriving from "grey" label is also a parent label for "red" and "yellow" labels
+    # "blue" label is not found in its descendants but is part of their evolutionnary history.
+    # We have to count for all deriving labels and not only ones on the leaves : they are analoguous in a way to
+    # internal lineages of a phylogenetic branch.
     #
-    if spmodel == "broken-NTB":
-        nsp = 1
+    # This example holds a precious insight : a label that is part of the evolutionnary history isn't necesseraly visible
+    # at the present-day. When trying to compute oldest and nearest coalescence age for the transition between
+    # "grey" --> "blue" labels we need to take all individuals carrying derived labels from "blue", which are "red" and "yellow".
+    # To find the nearest/oldest coalescence time between "grey" and "blue" we have to compare pairwise the min and max
+    # coalescence times of all "yellow-red" individuals and all "black individuals".
+    #
+    # Let's see the transition "grey" -> "blue" :
+    # Being part of grey individuals doesn't only mean you still hold a "grey" label. It can also mean you once hold a "grey" label,
+    # that was replaced by another label (or allele, as we can compare the approach to the infinite allele model).
+    #
+    # Now we have descendant_labels[grey] : {grey, green, yellow, red, blue, purple}
+    #
+    # Finir plus tard une fois le code complété
+
+
+
+
+    parent_of = {} # Dictionary storing the direct parent of each derived label
+    all_labels = set([1]) # Store all labels ever created; label 1 is the ancestral root label; set() stores unique elements
+
+    for row in mutation_table :
+        derived_label = row["label"] # blue
+        parent_label = row["parent_label"] # grey
+
+        parent_of[derived_label] = parent_label # Store the transition parent --> derived as parent_of[blue] = grey
+        
+        all_labels.add(derived_label) # Add the derived label to all historical labels
+        all_labels.add(parent_label) # Add the parent label to all historical labels
+    
+    descendant_labels = {}
+    
+    for label in all_labels :
+        descendant_labels[label] = set([label]) # if label = grey then descendant_labels[grey] = {grey} for now
+                                                # if label = blue then descendant_labels[blue] = {blue} for now
+        
+    for row in reversed(mutation_table) :
+        derived_label = row["label"]
+        parent_label = row["parent_label"]
+        
+        descendant_labels[parent_label].update(descendant_labels[derived_label])
+        # This adds every descendant of derived_label to the descendant set of parent_label
+        # For example, in this tree we have these transitions : 
+        #     grey -> purple
+        #     grey -> blue
+        #     blue -> yellow
+        #     blue -> red
+        #     grey -> green
+        # mutation_table is filled in preorder. Therefore, reversed(mutation_table) walks from derived labels back towards
+        # older parents labels, just like postorder, in other words if you have a row B --> C then you'll never have
+        # a row C --> X above it, always below it.
+        #
+        # Recursively :
+        # row "grey -> green" | descendant_labels[grey].update(descendant_labels[green]) = {grey, green}
+        # row "blue -> red"   | descendant_labels[blue].update(descendant_labels[red]) = {blue, red}
+        # row "blue -> yellow"| descendant_labels[blue].update(descendant_labels[yellow]) = {blue, red, yellow}
+        # row "grey -> blue"  | descendant_labels[grey].update(descendant_labels[blue]) = {grey, green, blue, red, yellow}
+        # row "grey -> purple"| descendant_labels[grey].update(descendant_labels[purple]) = {grey, green, blue, red, yellow, purple}
+
+    label_to_leaves = {}
+        # Dictionary storing the present-day leaves carrying each final label.
+        # Example :
+        #    label_to_leaves[red] = [red_ind1, red_ind2]
+        #    label_to_leaves[grey] = [grey_ind1, grey_ind2, grey_ind3, grey_ind4]
+        #    label_to_leaves[blue] = does not exist because no present-day individual is carrying the blue label
+    
+    for leaf in tree.iter_leaves() :
+        if leaf.sp not in label_to_leaves : # if never encountered yet leaf.sp
+            label_to_leaves[leaf.sp] = [] # create its key in the dictionary
+        label_to_leaves[leaf.sp].append(leaf) # append the leaf (ind) to its species/label key
+                                              # so for example label_to_leaves[red] = [red_ind1, red_ind2]
+
+    # All this was mainly to compute "descendant_labels"
+
+    for row in mutation_table :
+        derived_label = row["label"]
+        parent_label = row["parent_label"]
+        
+        derived_side_labels = descendant_labels[derived_label]
+        parent_side_labels = descendant_labels[parent_label] - descendant_labels[derived_label]
+        # Mutation_table:
+        #     grey -> purple
+        #     grey -> blue
+        #     blue -> yellow
+        #     blue -> red
+        #     grey -> green
+        #
+        # Recursively : 
+        # row "grey -> purple"
+        #       - derived_side_labels = descendant_labels[purple] = {purple}
+        #       - parent_side_labels = descendant_labels[grey] - descendant_labels[purple]
+        #         = {grey, green, blue, red, yellow, purple} - {purple} = {grey, green, blue, red, yellow}
+        # row "grey -> blue"
+        #       - derived_side_labels = descendant_labels[blue] = {blue, red, yellow}
+        #       - parent_side_labels = descendant_labels[grey] - descendant_labels[blue]
+        #         = {grey, green, blue, red, yellow, purple} - {blue, red, yellow,} = {grey, green, purple}
+        #
+        # Now we may compare pairwise all individuals of parent_side to all individuals derived_side to find the min() and max()
+        # coalescent age.
+        
+        derived_leaves = []
+        for label in derived_side_labels : 
+            derived_leaves.extend(label_to_leaves.get(label, []))
+            # We have ids : all derived labels, we have have dictionary converting labels to present-day leaves is they exist
+            # we can transform all derived_side_labels to derived_leaves by getting from the dictionnary, if "None" then []
+            #
+            # Let's take the "grey -> blue" example : 
+            # derived_side_labels = {blue, red, yellow}
+            # label = blue then extend derived_leaves by [] : there are no present-day blue leaves
+            # label = red then extend derived_leaves by [red_ind1, red_ind2]
+            # label = yellow then extend derived_leaves by [yellow_ind1, yellow_ind2]
+            # So to get coalescent_age of the transition "grey -> blue" you have to analyse
+            # derived_leaves = [red_ind1, red_ind2, yellow_ind1, yellow_ind2].
+        
+        parent_leaves = []
+        for label in parent_side_labels : 
+            parent_leaves.extend(label_to_leaves.get(label, []))
+            # Same but for parent_side
+            # for "grey -> blue" :
+            # parent_leaves = [purple_ind1, grey_ind1, green_ind1, grey_ind2, grey_ind3, grey_ind4].
+            
+            
+        if len(derived_leaves) == 0 or len(parent_leaves) == 0 :
+            row["nearest_coalescence_age"] = None
+            row["oldest_coalescence_age"] = None
+            print('Something went wrong : a derived_leaves or parent_leaves list is empty')
+            continue
+            # if one side is empty, its an error keep everything None and continue
+            # this shouldn't happen, if a label creates a derived label, then they both
+            # exist on the branches of the genealogy : which always lead to living
+            # individual, even if their label is overwriten.
+            
+        coalescence_ages = []
+        # Store all pairwise MRCA ages between derived_leaves and parent_leaves
+        # Example for "grey -> blue" :
+        #   derived_leaves = [red_ind1, red_ind2, yellow_ind1, yellow_ind2]
+        #   parent_leaves = [purple_ind1, grey_ind1, green_ind1, grey_ind2, grey_ind3, grey_ind4]
+        # We shall compute all pairwise combinations between these two lists
+        # min() is scenario a and max() is scenario b
+        
+        for derived_leaf in derived_leaves:
+            for parent_leaf in parent_leaves :
+                mrca = tree.get_common_ancestor(derived_leaf, parent_leaf) # Get the node
+                mrca_age = tree_height - tree.get_distance(mrca) # Get the age of that node ; root_to_present - root_to_MRCAnode = age before present
+                coalescence_ages.append(mrca_age)
+        
+        row["nearest_coalescence_age"] = min(coalescence_ages)
+        # Lambert scenario a, nearest = the most recent pairwise coalescence between the derived side and the parent side
+        
+        row["oldest_coalescence_age"] = max(coalescence_ages)
+        # Lambert scenario b, oldest = the oldest pairwise coalescence between the derived side and the parent side
+
+
+
+
+            
+    if debug:
+        debug_info = {}
+
+        # ===== BEFORE MERGE =====
+        # Species before merge = distinct mutation labels among present-day leaves
+        before_species_count = {}
         for leaf in tree.iter_leaves():
-            popInd = [0] * (ndeme+1)
-            popInd[leaf.deme] = 1
-            leaf.popInd = popInd
-            leaf.name = "sp"+str(nsp)
-            nsp += 1
+            before_species_count[leaf.sp] = before_species_count.get(leaf.sp, 0) + 1
+
+        before_abundances = list(before_species_count.values())
+
+        before_ages = [tree.get_distance(leaf) for leaf in tree.iter_leaves()]
+        before_tmrca = max(before_ages) if before_ages else 0.0
+
+        debug_info["before_merge"] = {
+            "n_species": len(before_species_count),
+            "n_singletons": sum(ab == 1 for ab in before_abundances),
+            "abundances": before_abundances,
+            "total_abundance": sum(before_abundances),
+            "tmrca": before_tmrca,}
+        
     
     if spmodel == "genealogy":
         for leaf in tree.iter_leaves():
@@ -227,18 +436,11 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
             
         for node in tree.traverse("preorder"):
             if not node.is_leaf() and node not in traversed_nodes:
-                # print(tree.get_ascii(attributes=["mut", "name"], show_internal=True))
-                # print("\n" + "="*80)
-                # print(f"\033[1;32mCURRENT NODE: {node.name}\033[0m")
-                # print("="*80)
                 children = node.get_children()
                 if len(children) != 2:
                     raise ValueError("The algorithm does not know how to deal with non dichotomic trees.")
                 left_species = {leaf.sp for leaf in children[0].iter_leaves()}
                 right_species = {leaf.sp for leaf in children[1].iter_leaves()}
-                # print(f"children = {[c.name for c in children]}")
-                # print(f"left_species = {left_species}")
-                # print(f"right_species = {right_species}")
                 if not (left_species & right_species):
                     continue
             
@@ -275,10 +477,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
                     tree.add_child(replacement_node)      
                 else:
                     parent.add_child(replacement_node)
-            # else:
-            #     print(tree.get_ascii(attributes=["mut", "name"], show_internal=True))
-            #     print("END OF PREORDER")
-                    
+
+
                 # There's a float miscalculation that breaks the ultrametricity of an order of 1 float unity (~1e-16)
                 # It should be invisible to most softwares. But still. The "force_ultrametricity" part of the code
                 # doesn't work but it can be improved and maybe will fix the ultrametricity ? I put a check just before
@@ -297,10 +497,6 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
             
         for node in tree.traverse("postorder"):
             if not node.is_leaf() and node not in traversed_nodes:
-                # print(tree.get_ascii(attributes=["mut", "name"], show_internal=True))
-                # print("\n" + "="*80)
-                # print(f"\033[1;32mCURRENT NODE: {node.name}\033[0m")
-                # print("="*80)
                 children = node.get_children()
                 if len(children) != 2:
                     raise ValueError("The algorithm does not know how to deal with non dichotomic trees.")
@@ -346,19 +542,17 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
                     
                                     
                 
-    # if spmodel == "phenotypic" :
+    if spmodel == "phenotypic" :
+        for leaf in tree.iter_leaves():
+            popInd = [0] * (ndeme + 1)
+            popInd[leaf.deme] = 1
+            leaf.popInd = popInd
         
     # if spmodel == "paraphyletic" :
-        
-    # if spmodel == "genealogy" :
-        
     
-    if force_ultrametric: # TODO : add is.ultramtric from ete3, maybe this will work for float loss
-         tree_dist = tree.get_farthest_leaf()[1]
-         for leaf in tree.iter_leaves():
-             dst = tree.get_distance(leaf)
-             if dst != tree_dist:
-                 leaf.dist += tree_dist - dst
+    
+    
+
 
 
     if spmodel in ("loose", "lacy"):
@@ -366,6 +560,9 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
         for leaf in tree.iter_leaves():
             leaf.name = "sp"+str(nsp)
             nsp += 1
+    if spmodel == "genealogy":
+        print("Warning : This output is a genealogical tree without phylogenetic attributes. It may constain paraphyletic relations arising from ancestral retention")
+        print("Please don't try to getLTT() on this output as this you will count multiple branches from the same lineage.")
             
             
     # SECURITY CHECK FOR ULTRAMETRICITY FLOAT LOSS
@@ -384,15 +581,93 @@ def toPhylo(tree, mu, tau = 0, spmodel = "loose",
         print("delta abs:", delta_abs)
         print("delta rel:", delta_rel)
     
+    tree.add_features(
+        spmodel=spmodel,
+        mu=mu,
+        tau=tau,
+        mutation_table=mutation_table)
     
-    return tree
+    if debug:
+        # ===== AFTER MERGE =====
 
+        if spmodel == "genealogy":
+            after_species_count = {}
+            for leaf in tree.iter_leaves():
+                after_species_count[leaf.sp] = after_species_count.get(leaf.sp, 0) + 1
+
+            after_abundances = list(after_species_count.values())
+
+        else:
+            # In loose/lacy, after merge, each remaining leaf is one species.
+            after_abundances = []
+
+            for leaf in tree.iter_leaves():
+                if hasattr(leaf, "popInd"):
+                    after_abundances.append(sum(leaf.popInd))
+                elif hasattr(leaf, "mergedInd"):
+                    after_abundances.append(len(leaf.mergedInd.split()))
+                else:
+                    after_abundances.append(1)
+
+        after_ages = [tree.get_distance(leaf) for leaf in tree.iter_leaves()]
+        after_tmrca = max(after_ages) if after_ages else 0.0
+
+        debug_info["after_merge"] = {
+            "n_species": len(after_abundances),
+            "n_singletons": sum(ab == 1 for ab in after_abundances),
+            "abundances": after_abundances,
+            "total_abundance": sum(after_abundances),
+            "tmrca": after_tmrca,}
+
+        return tree, debug_info
+
+    return tree
 
 def ubranch_mutation(node, mu, tau = 0, seed = None):
     """
-    Draw mutations following a poisson process with parameter 
-    max((B - tau), 0)*mu where mu is the point mutation rate, B is the 
-    length of the branch at a given node and tau 
+    Draw the first mutation event on a branch of length B with a latent period
+    of time tau defining a mutable length as :
+        mutable_length = max((B - tau), 0)
+    
+    The waiting time of the first event is drawn from an exponential
+    distribution with rate mu : 
+        Tmut ~ Exponential(rate = mu)
+        with density f(t) = mu * exp(-mu * t) with t ≥ 0
+    
+    Logic
+    ----------
+    If Tmut > mutable_length then we did not draw a mutation event on
+    that branch. If Tmut ​≤ mutable_length then the first event occurs on the
+    branch. Then position on the whole branch of length B is
+        mut_from_parent = tau + Tmut
+    
+    
+    Mathematical proof of consistency with Poisson Process
+    ----------
+    A Poisson process with rate mu means that mutations occur randomly along a
+    branch with average rate mu per generation.
+    
+    On the mutable_length of B, the number of mutation follows :
+        N ~ Poisson(mu * mutable_length)
+    Therefore :
+        P(N = k) = ((mu * mutable_length)^k / k!) * exp(-mu * mutable_length)
+    And the probability of zero mutations (k = 0) is :
+        P(N = 0) = exp(-mu * mutable_length)
+    Therefore the probability to see at least one mutation is :
+        P(N ​≥ 1) = 1 - P(N = 0)
+                   1 - exp(-mu * mutable_length)
+    
+    P(Tmut ​≤ mutable_length) is the area under the density between 0 and
+    mutable_length so that : 
+        P(Tmut ​≤ mutable_length) = ∫[0,mutable_length] mu * exp(-mu * t) dt
+        P(Tmut ​≤ mutable_length) = 1 - exp(−mu * mutable_length)
+    
+    Then P(N ​≥ 1) = P(Tmut ​≤ mutable_length)
+    
+    So drawing Tmut and checking whether Tmut <= mutable_length is equivalent
+    to checking whether the Poisson process produced at least one mutation on
+    the mutable part of the branch. With the advantage that the waiting time
+    gives us a time of where the first mutation is drawn.
 
     Parameters
     ----------
@@ -415,41 +690,46 @@ def ubranch_mutation(node, mu, tau = 0, seed = None):
         
     Returns
     -------
-    bool
-        whether or not a at least one mutation should appear on the tree at 
-        this node
+    tuple
+        (has_mutation, mut_from_parent)
+        
+        has_mutation : bool
+            True if a mutation occured (Poisson(lambd) >= 1)
+        
+        mut_from_parent : float or None
+            Distance from the parent node to the mutation. None if no mutation
+            occured.
 
     Examples
     --------
-    TODO: Examples with tau ?
-    >>> from ete3 import Tree
-    >>> tree = Tree('((A:1,(B:1,C:1)1:1)1:5,(D:1,E:1)1:1);')
-    >>> node = tree.children[0] # first non-root node
-    
-    >>> ubranch_mutation(node = node, mu = 0, seed = 42)
-    False
-    
-    >>> ubranch_mutation(node = node, mu = 1, seed = 42)
-    True
-    
-    >>> ubranch_mutation(node = node, mu = 0.5, seed = 42)
-    True
     """
     # Idiot proof
     if node.__class__.__name__ != 'TreeNode' :
         raise ValueError('node must have a class TreeNode')
     if mu < 0 or mu > 1 or not isinstance(mu, (int,float)):
         raise ValueError('mu must be a float between 0 and 1')
-    if tau < 0 or not isinstance(tau, (int,float)):
+    if tau < 0 or not isinstance(tau, (int,float)): 
         raise ValueError('tau must be a float superior or equal to 0')
     if seed is not None and not isinstance(seed, int):
         raise ValueError('seed must be an integer')
     if seed is not None:
         np.random.seed(seed) # if you put a seed in umut_branch() it means you want to check its behavior so reset seed
     
-    lambd = max((node.dist - tau), 0) * mu 
-    rb = np.random.poisson(lambd) 
-    return rb >= 1 # parametrize the 1 by a value n
+    mutable_length = max(node.dist - tau, 0) # compute the length where mutation can happen (imagine a latent length where no mutation can happen between parent and mutation of length tau)
+      
+    if mutable_length == 0 or mu == 0: # no mutations can arise
+        return False, None
+    
+    Tmut = np.random.exponential(scale = 1 / mu) # the waiting time of the first event of a Poisson Distribution as 1/scale * exp(-x/scale)
+                                                 # we defined scale as 1/mu so Tmut is sampled in 1/(1/mu) * exp(-x/(1/mu))
+                                                 # But 1/(1/mu) = mu and -x/(1/mu) = -x*mu    so Tmut is sampled in mu*exp(-x*mu)
+    
+    if Tmut > mutable_length: # the waiting time is further the mutable_length
+        return False, None
+        
+    mut_from_parent = tau + Tmut # the case where Tmut is < mutable_length is when Poisson(Lambda) >= 1 ; we compute tau + Tmut to make the label_tree
+
+    return True, mut_from_parent
 
 
 if __name__ == "__main__":

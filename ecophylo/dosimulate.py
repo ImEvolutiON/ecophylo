@@ -29,7 +29,7 @@ from ecophylo import pastdemo
 from ecophylo import phylogen
 from ecophylo import sumstat
 
-def dosimuls(nsim, samples, deme_sizes, mu, tau = 0, spmodel = "SGD", 
+def dosimuls(nsim, samples, deme_sizes, mu, tau = 0, spmodel = "phenotypic", 
              gr_rates = None, changetimes = None, mrca = None, migr = 1, 
              migr_times = None, splits = None, 
              verbose = False, output = ['Params'], # Params, Sumstat, Tree
@@ -293,7 +293,8 @@ def dosimuls(nsim, samples, deme_sizes, mu, tau = 0, spmodel = "SGD",
 def check_params(samples, deme_sizes, mu, tau = 0, gr_rates = None, 
                    changetimes = None, mrca = None, 
                    migr = 1, migr_times = None, splits = None,
-                   verbose = False, seed = None, prior_locate = None):
+                   verbose = False, seed = None, prior_locate = None, debug = 
+                   False):
     """
     Internal function used to check parameters of simulate and dosimulate 
     functions. Parameters thus need to have the same format as described in 
@@ -664,6 +665,9 @@ def check_params(samples, deme_sizes, mu, tau = 0, gr_rates = None,
         # check verbose
         if not isinstance(verbose, bool):
             raise ValueError("verbose must be a boolean") 
+        # check debug
+        if not isinstance(debug, bool):
+            raise ValueError("debug must be a boolean") 
         # check seed
         if seed is not None and not isinstance(seed, (int,float)):
             raise ValueError("seed must be an integer")
@@ -675,11 +679,13 @@ def check_params(samples, deme_sizes, mu, tau = 0, gr_rates = None,
 
 
 
-def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "SGD",
+def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "phenotypic",
              gr_rates = None, changetimes = None, mrca = None, 
              migr = 1, migr_times = None, splits = None,
-             verbose = False, seed = None, force = False):
+             verbose = False, seed = None, force = False, debug = False):
     """
+    Description
+    ----------
     This function implements the simulation algorithm described in Barthelemy
     et al. 2021 in which (i) the shared co-ancestry of present individuals is
     simulated backward in time using coalescent theory (ii) speciation events
@@ -720,6 +726,40 @@ def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "SGD",
         the size of the assemblages Jm have changed. If multiple demes are to be
         simulated, should be a nested list containing for each deme, a list of
         times at which changes occured in which the first element is 0.
+        
+    spmodel = {"genealogy", "loose", "lacy", "phenotypic"}
+        default = "genealogy" : string
+
+        - "genealogy"
+        The complete genealogy is retained after mutation sprinkling.
+        Cannot be coerced in a species tree.
+        
+        - "loose"
+        The complete genealogy is collapsed in a set of monophyletic clades
+        according to the "loose species partition" from Manceau, Lambert 2018.
+        The loose species partition aims to respect heterotypy between species,
+        individuals in different species are genetically different for each
+        species cluster. This is the finest partition of the present-day
+        individuals as it usually needs to merge different clades : individuals
+        can have different labels within a species. This is equivalent to
+        lumpers.
+        
+        - "lacy"
+        The complete genealogy is collapsed in a set of monophyletic clades
+        according to the "lacy species partition" from Manceau, Lambert 2018.
+        The lacy species partition aims to respect homotypy within species,
+        individuals within the same species are genetically identical for each
+        species cluster. This is the coarsest partition of the present-day
+        individuals as it usually needs to XXXXX : individuals with the same
+        labels can be in different species. This is equivalent to splitters.
+        
+        - "phenotypic"
+        The complete genealogy is collapsed in a set of monophyletic lineages
+        as a "label-tree" rather than a species tree. This is equivalent to
+        Hubbell's UNTB and associated research (Jabot & Chave 2009). See more
+        in Manceau, Lambert 2018 but note what we call "XXXXX" is analogous to
+        what they call "phenotypic", implying phenotypes.
+
     mrca = None : int
         # TODO : document this when it is implemented
     migr = 1 : int, float or list of int,float or nested lists of int,float
@@ -756,6 +796,12 @@ def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "SGD",
         resulting genealogy to be passed to a phylogeny
     seed = None : int
         set seed for entire simulation
+    debug = False : bool
+        change the return function, returns a tuple containing the phylogeny,
+        the number of species before the partitioning, the number of species
+        after the partitioning, the number of singleton before the partitioning
+        the number of singleton after the partitioning, the tmrca of the tree
+        before the partitioning, the tmrca after the partitioning
     
     Examples
     --------
@@ -798,7 +844,7 @@ def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "SGD",
             samples = samples, deme_sizes = deme_sizes, mu = mu, tau = tau,  
             gr_rates = gr_rates, changetimes = changetimes,
             mrca = mrca, migr = migr, migr_times = migr_times,
-            splits = splits, verbose = verbose, seed = seed, 
+            splits = splits, verbose = verbose, seed = seed, debug = debug,
             prior_locate = None
         )
   
@@ -942,7 +988,7 @@ def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "SGD",
                                                            if tree.is_sample(u)}
     tree = Tree(tree.newick(node_labels = node_labels))
     phylo = phylogen.toPhylo(
-        tree= tree, mu= mu, tau= tau, spmodel = spmodel, seed= seed
+        tree= tree, mu= mu, tau= tau, spmodel = spmodel, seed= seed, debug = debug
     )
 
     return phylo

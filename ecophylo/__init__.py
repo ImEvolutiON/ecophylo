@@ -10,3 +10,4 @@ from ecophylo.phylogen import ubranch_mutation
 
 from ecophylo.sumstat import getAbund
 from ecophylo.sumstat import getDeme
+from ecophylo.sumstat import getLTT
