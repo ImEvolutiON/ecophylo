@@ -29,9 +29,9 @@ from ecophylo import pastdemo
 from ecophylo import phylogen
 from ecophylo import sumstat
 
-def dosimuls(nsim, samples, deme_sizes, mu, tau = 0, spmodel = "phenotypic", 
-             gr_rates = None, changetimes = None, mrca = None, migr = 1, 
-             migr_times = None, splits = None, 
+def dosimuls(nsim, samples, deme_sizes, mu, tau = 0, spmodel = "paraphyletic", 
+             age = "mutation", gr_rates = None, changetimes = None,
+             mrca = None, migr = 1,  migr_times = None, splits = None, 
              verbose = False, output = ['Params'], # Params, Sumstat, Tree
              file_name = None, seed = None):
     """
@@ -207,9 +207,10 @@ def dosimuls(nsim, samples, deme_sizes, mu, tau = 0, spmodel = "phenotypic",
         # SIMULATE
         phylo = simulate(
             samples = samples, deme_sizes = deme_sizes, mu = mu, tau = tau,
-            spmodel = spmodel, gr_rates = gr_rates, changetimes = changetimes, 
-            mrca = mrca, migr = migr, migr_times = migr_times, 
-            splits = splits, verbose = False, seed = seed, force = True
+            spmodel = spmodel, age = age, gr_rates = gr_rates,
+            changetimes = changetimes, mrca = mrca, migr = migr, 
+            migr_times = migr_times, splits = splits, verbose = False,
+            seed = seed, force = True
         )
         #################################################################
         ####                    CHECK TREE                           ####
@@ -679,9 +680,9 @@ def check_params(samples, deme_sizes, mu, tau = 0, gr_rates = None,
 
 
 
-def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "phenotypic",
-             gr_rates = None, changetimes = None, mrca = None, 
-             migr = 1, migr_times = None, splits = None,
+def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "paraphyletic",
+             age = "mutation", gr_rates = None, changetimes = None,
+             mrca = None, migr = 1, migr_times = None, splits = None,
              verbose = False, seed = None, force = False, debug = False):
     """
     Description
@@ -727,7 +728,7 @@ def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "phenotypic",
         simulated, should be a nested list containing for each deme, a list of
         times at which changes occured in which the first element is 0.
         
-    spmodel = {"genealogy", "loose", "lacy", "phenotypic"}
+    spmodel = {"genealogy", "loose", "lacy", "paraphyletic"}
         default = "genealogy" : string
 
         - "genealogy"
@@ -988,8 +989,8 @@ def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "phenotypic",
                                                            if tree.is_sample(u)}
     tree = Tree(tree.newick(node_labels = node_labels))
     phylo = phylogen.toPhylo(
-        tree= tree, mu= mu, tau= tau, spmodel = spmodel, seed= seed, debug = debug
-    )
+        tree= tree, mu= mu, tau= tau, spmodel = spmodel, age = age, seed= seed,
+        debug = debug)
 
     return phylo
 

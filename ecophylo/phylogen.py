@@ -15,8 +15,8 @@ Functions :
 
 import numpy as np
 
-def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic", 
-            force_ultrametric = True, seed = None, debug = False):
+def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic", 
+            force_ultrametric = True, age = "mutation", seed = None, debug = False):
     """
     Merge branches of genealogy following speciation model of the user choice 
     after sprinkling mutation events over the branches of simulated genealogies
@@ -30,7 +30,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
     The descendants stemming from a branch with at least one mutation define
     a genetically distinct clade. These clades can be paraphyletic because of
     ancestral retention. Either the user choose to accept paraphyletic gene
-    histories ('spmodel = phenotypic'), or to impose monophyly. For every
+    histories ('spmodel = paraphyletic'), or to impose monophyly. For every
     gene tree exist a species partition satisfying either A or B. These
     differences in species tree can be compared to the taxonomist opposition
     between splitter and lumper.
@@ -46,8 +46,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
         seperated for to be considered distinct species
         
         
-    spmodel = {"genealogy", "loose", "lacy", "phenotypic"}
-        default = "phenotypic" : string
+    spmodel = {"genealogy", "loose", "lacy", "paraphyletic"}
+        default = "paraphyletic" : string
 
         - "genealogy"
         The complete genealogy is retained after mutation sprinkling.
@@ -72,12 +72,30 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
         individuals as it usually needs to XXXXX : individuals with the same
         labels can be in different species. This is equivalent to splitters.
         
-        - "phenotypic"
+        - "paraphyletic"
         The complete genealogy is collapsed in a set of monophyletic lineages
         as a "label-tree" rather than a species tree. This is equivalent to
         Hubbell's UNTB and associated research (Jabot & Chave 2009). See more
-        in Manceau, Lambert 2018 but note what we call "XXXXX" is analogous to
-        what they call "phenotypic", implying phenotypes.
+        in Manceau, Lambert 2018 but note what we call "paraphyletic" is
+        analogous to what they call "phenotypic", implying phenotypes.
+        
+    age = {"mutation", "nearest", "oldest"}, default="mutation"
+        Divergence-age convention for nodes used for spmodel="paraphyletic".
+        
+        - "mutation"
+        Use the age of apparition of the label.
+        
+        - "nearest"
+        Use the shortest pairwise coalescence age between present-day
+        representatives of the derived-side and the present-day representatives
+        of the parent-side. Under the infinite allele, a shortcut is used to
+        avoid computing pairwise distances (more in doc)
+        
+        - "oldest"
+        Use the longest pairwise coalescence age between present-day
+        representatives of the derived-side and the present-day representatives
+        of the parent-side. Under the infinite allele, a shortcut is used to
+        avoid computing pairwise distances (more in doc).
 
     force_ultrametric = True : bool
         Whether or note to force phylogenetic tree ultrametry 
@@ -97,7 +115,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
         as well as the number of individuals descending from a speciation event
         in the genealogy, which defined the species abundance in the sample at 
         present (abundances can be retrived using the getAbund function).
-
+    
     Examples
     --------
     >>>
@@ -107,9 +125,9 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
         raise ValueError('tree must have a class TreeNode')
     if mu < 0 or mu > 1 or not isinstance(mu, (int,float)):
         raise ValueError('mu must be a float between 0 and 1')
-    if not spmodel in ['loose', 'lacy', 'genealogy', 'phenotypic']:
+    if not spmodel in ['loose', 'lacy', 'genealogy', 'paraphyletic']:
         raise ValueError(spmodel+' is not a correct model. '+
-                'spmodel must be either "loose", "lacy", "genealogy" or "phenotypic" string')
+                'spmodel must be either "loose", "lacy", "genealogy" or "paraphyletic" string')
     if not isinstance(force_ultrametric, bool):
         raise ValueError('force_ultrametric must be a boolean')
     if not isinstance(debug, bool):
@@ -118,6 +136,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
         raise ValueError('seed must be an integer')
     if seed is not None:
         np.random.seed(seed) # Initialize RNG vector
+    if age not in ["mutation", "nearest", "oldest"]:
+        raise ValueError("age must be either 'mutation', 'nearest' or 'oldest'")
 
     # init some parameters
     innerNodeIndex = 0
@@ -126,7 +146,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
     demeID = 0
     ndeme = 0
     
-    sp_origin = {1: tree}
+    sp_origin = {1: tree} # Dictionary storing for each spID the origin node, so spID = 1 is root (tree)
     tree_height = max(tree.get_distance(leaf) for leaf in tree.iter_leaves())
     mutation_table = [] 
     
@@ -175,6 +195,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
         # umut is True : new label overwritting
         
         parent_label = node.sp # get parent sp from node before overwritting it
+        parent_origin_node = sp_origin[parent_label] # we enter the spID of the parent to get the node of origin the parent spID
         spID += 1
         node.sp = spID
         node.mut = "*" # for debugging when printing the tree
@@ -191,7 +212,13 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
         mutation_coalescence_age = tree_height - mutation_depth
         mutation_id = str(parent_name) + "->" + str(child_name)
         
-        node.add_features(mutation_id = mutation_id, mut_from_parent = mut_from_parent, mutation_coalescence_age = mutation_coalescence_age)
+        nearest_coalescence_age = tree_height - tree.get_distance(node.up) # Lambert scenario a : shortest coalescence time
+        oldest_coalescence_age = tree_height - tree.get_distance(parent_origin_node) # Lambert scenario b : longest coalescence time
+        node.add_features(mutation_id = mutation_id,
+                          mut_from_parent = mut_from_parent,
+                          mutation_coalescence_age = mutation_coalescence_age,
+                          nearest_coalescence_age = nearest_coalescence_age,
+                          oldest_coalescence_age = oldest_coalescence_age)
         
         mutation_table.append({
             "mutation_id": mutation_id,
@@ -199,15 +226,78 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
             "label": spID,
             "parent_label": parent_label,
             "mutation_coalescence_age": mutation_coalescence_age, # Lambert scenario c
-            "nearest_coalescence_age": None, # Lambert scenario a
-            "oldest_coalescence_age": None # Lambert scenario b
+            "nearest_coalescence_age": nearest_coalescence_age, # Lambert scenario a
+            "oldest_coalescence_age": oldest_coalescence_age # Lambert scenario b
             })
 
-    # Labelling is complete : we can compute Lambert scenarios a & b here
+    # In a strictly monophyletic species tree, the divergence time between two species is defined by a single node
+    # because each species is a clade.
+    # This is no longer the cas when species are non-monophyletic, which is the case of gene trees that we
+    # want to transform into species trees.
     # 
+    # In a paraphyletic partition of species, different pairs of individuals belonging to the same two species
+    # can have different MRCA ages.
+    #
+    # This is highlighted by Manceau and Lambert, they propose three age conventions :
+    #   nearest : the shortest coalescence time among all pairs of individuals from both species
+    #   oldest : the longest coalescence time
+    #   mutation : the date of birth of the derived character
+    # However, the first two can produce polytomic topology. And the last one can produce phylogenetic
+    # topology inconsistent with genealogical topology.
+    #
+    # Here's an exemple : 
+    #                         ┌──────*purple──── purple_ind1
+    #                  ┌──────┤n2
+    #                  │      └───────────────── grey_ind1
+    #                  │           
+    #                  │      
+    #                  │                  ┌───── red_ind1
+    #          grey  ──┤n1           ┌*red┤n6
+    #                  │             │    └───── red_ind2
+    #                  │      ┌─*blue┤n4
+    #                  │      │      │        ┌─ yellow_ind1
+    #                  │      │      └─*yellow┤n7
+    #                  │      │               └─ yellow_ind2
+    #                  └──────┤n3
+    #                         │         ┌*green─ green_ind1
+    #                         │      ┌──┤n8
+    #                         │      │  └─────── grey_ind2
+    #                         └──────┤n5
+    #                                │  ┌─────── grey_ind3
+    #                                └──┤n9
+    #                                   └─────── grey_ind4
+    #
+    #                 100     75    50    25    0 BP
+    #
+    # This genealogy gives us this mutation_table : 
+    #       grey -> blue :
+    #           - mutation = 70
+    #           - nearest = 75 on n3
+    #           - oldest = 100 on n1
+    #       grey -> purple :
+    #           - mutation = 50
+    #           - nearest = 75 on n2
+    #           - oldest = 100 on n1
+    #       blue -> red :
+    #           - mutation = 45
+    #           - nearest = 50 on n4
+    #           - oldest = 50 on n4
+    #       blue -> yellow :
+    #           - mutation = 40
+    #           - nearest = 50 on n4
+    #           - oldest = 50 on n4
+    #       grey -> green :
+    #           - mutation = 27
+    #           - nearest = 30 on n8
+    #           - oldest = 100 on n1
+    
+    
+    
+    
+    # Now in our model : 
     # For each mutation event, a parent label gives rise to a derived label
-    # There's multiple outcomes possible : 
-    # - A derived label survives up until present
+    # Multiple outcomes are possible : 
+    # - A derived label survives until present
     # - A derived label becomes a parent label by giving rise to a new derived label and exists in the present-day
     # - A derived label becomes a parent label by giving rise to multiple new derived labels and only none of its descendants
     #   in the present-day carry the label, existing only as an internal label.
@@ -251,148 +341,21 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
     # that was replaced by another label (or allele, as we can compare the approach to the infinite allele model).
     #
     # Now we have descendant_labels[grey] : {grey, green, yellow, red, blue, purple}
+    # And we have descendant_labels[blue] : {blue, red, yellow}
     #
-    # Finir plus tard une fois le code complété
-
-
-
-
-    parent_of = {} # Dictionary storing the direct parent of each derived label
-    all_labels = set([1]) # Store all labels ever created; label 1 is the ancestral root label; set() stores unique elements
-
-    for row in mutation_table :
-        derived_label = row["label"] # blue
-        parent_label = row["parent_label"] # grey
-
-        parent_of[derived_label] = parent_label # Store the transition parent --> derived as parent_of[blue] = grey
-        
-        all_labels.add(derived_label) # Add the derived label to all historical labels
-        all_labels.add(parent_label) # Add the parent label to all historical labels
-    
-    descendant_labels = {}
-    
-    for label in all_labels :
-        descendant_labels[label] = set([label]) # if label = grey then descendant_labels[grey] = {grey} for now
-                                                # if label = blue then descendant_labels[blue] = {blue} for now
-        
-    for row in reversed(mutation_table) :
-        derived_label = row["label"]
-        parent_label = row["parent_label"]
-        
-        descendant_labels[parent_label].update(descendant_labels[derived_label])
-        # This adds every descendant of derived_label to the descendant set of parent_label
-        # For example, in this tree we have these transitions : 
-        #     grey -> purple
-        #     grey -> blue
-        #     blue -> yellow
-        #     blue -> red
-        #     grey -> green
-        # mutation_table is filled in preorder. Therefore, reversed(mutation_table) walks from derived labels back towards
-        # older parents labels, just like postorder, in other words if you have a row B --> C then you'll never have
-        # a row C --> X above it, always below it.
-        #
-        # Recursively :
-        # row "grey -> green" | descendant_labels[grey].update(descendant_labels[green]) = {grey, green}
-        # row "blue -> red"   | descendant_labels[blue].update(descendant_labels[red]) = {blue, red}
-        # row "blue -> yellow"| descendant_labels[blue].update(descendant_labels[yellow]) = {blue, red, yellow}
-        # row "grey -> blue"  | descendant_labels[grey].update(descendant_labels[blue]) = {grey, green, blue, red, yellow}
-        # row "grey -> purple"| descendant_labels[grey].update(descendant_labels[purple]) = {grey, green, blue, red, yellow, purple}
-
-    label_to_leaves = {}
-        # Dictionary storing the present-day leaves carrying each final label.
-        # Example :
-        #    label_to_leaves[red] = [red_ind1, red_ind2]
-        #    label_to_leaves[grey] = [grey_ind1, grey_ind2, grey_ind3, grey_ind4]
-        #    label_to_leaves[blue] = does not exist because no present-day individual is carrying the blue label
-    
-    for leaf in tree.iter_leaves() :
-        if leaf.sp not in label_to_leaves : # if never encountered yet leaf.sp
-            label_to_leaves[leaf.sp] = [] # create its key in the dictionary
-        label_to_leaves[leaf.sp].append(leaf) # append the leaf (ind) to its species/label key
-                                              # so for example label_to_leaves[red] = [red_ind1, red_ind2]
-
-    # All this was mainly to compute "descendant_labels"
-
-    for row in mutation_table :
-        derived_label = row["label"]
-        parent_label = row["parent_label"]
-        
-        derived_side_labels = descendant_labels[derived_label]
-        parent_side_labels = descendant_labels[parent_label] - descendant_labels[derived_label]
-        # Mutation_table:
-        #     grey -> purple
-        #     grey -> blue
-        #     blue -> yellow
-        #     blue -> red
-        #     grey -> green
-        #
-        # Recursively : 
-        # row "grey -> purple"
-        #       - derived_side_labels = descendant_labels[purple] = {purple}
-        #       - parent_side_labels = descendant_labels[grey] - descendant_labels[purple]
-        #         = {grey, green, blue, red, yellow, purple} - {purple} = {grey, green, blue, red, yellow}
-        # row "grey -> blue"
-        #       - derived_side_labels = descendant_labels[blue] = {blue, red, yellow}
-        #       - parent_side_labels = descendant_labels[grey] - descendant_labels[blue]
-        #         = {grey, green, blue, red, yellow, purple} - {blue, red, yellow,} = {grey, green, purple}
-        #
-        # Now we may compare pairwise all individuals of parent_side to all individuals derived_side to find the min() and max()
-        # coalescent age.
-        
-        derived_leaves = []
-        for label in derived_side_labels : 
-            derived_leaves.extend(label_to_leaves.get(label, []))
-            # We have ids : all derived labels, we have have dictionary converting labels to present-day leaves is they exist
-            # we can transform all derived_side_labels to derived_leaves by getting from the dictionnary, if "None" then []
-            #
-            # Let's take the "grey -> blue" example : 
-            # derived_side_labels = {blue, red, yellow}
-            # label = blue then extend derived_leaves by [] : there are no present-day blue leaves
-            # label = red then extend derived_leaves by [red_ind1, red_ind2]
-            # label = yellow then extend derived_leaves by [yellow_ind1, yellow_ind2]
-            # So to get coalescent_age of the transition "grey -> blue" you have to analyse
-            # derived_leaves = [red_ind1, red_ind2, yellow_ind1, yellow_ind2].
-        
-        parent_leaves = []
-        for label in parent_side_labels : 
-            parent_leaves.extend(label_to_leaves.get(label, []))
-            # Same but for parent_side
-            # for "grey -> blue" :
-            # parent_leaves = [purple_ind1, grey_ind1, green_ind1, grey_ind2, grey_ind3, grey_ind4].
-            
-            
-        if len(derived_leaves) == 0 or len(parent_leaves) == 0 :
-            row["nearest_coalescence_age"] = None
-            row["oldest_coalescence_age"] = None
-            print('Something went wrong : a derived_leaves or parent_leaves list is empty')
-            continue
-            # if one side is empty, its an error keep everything None and continue
-            # this shouldn't happen, if a label creates a derived label, then they both
-            # exist on the branches of the genealogy : which always lead to living
-            # individual, even if their label is overwriten.
-            
-        coalescence_ages = []
-        # Store all pairwise MRCA ages between derived_leaves and parent_leaves
-        # Example for "grey -> blue" :
-        #   derived_leaves = [red_ind1, red_ind2, yellow_ind1, yellow_ind2]
-        #   parent_leaves = [purple_ind1, grey_ind1, green_ind1, grey_ind2, grey_ind3, grey_ind4]
-        # We shall compute all pairwise combinations between these two lists
-        # min() is scenario a and max() is scenario b
-        
-        for derived_leaf in derived_leaves:
-            for parent_leaf in parent_leaves :
-                mrca = tree.get_common_ancestor(derived_leaf, parent_leaf) # Get the node
-                mrca_age = tree_height - tree.get_distance(mrca) # Get the age of that node ; root_to_present - root_to_MRCAnode = age before present
-                coalescence_ages.append(mrca_age)
-        
-        row["nearest_coalescence_age"] = min(coalescence_ages)
-        # Lambert scenario a, nearest = the most recent pairwise coalescence between the derived side and the parent side
-        
-        row["oldest_coalescence_age"] = max(coalescence_ages)
-        # Lambert scenario b, oldest = the oldest pairwise coalescence between the derived side and the parent side
-
-
-
+    # To compare the two sides of the transition, we can substract them.
+    # derived_side = descendant_labels[blue] = {blue, red, yellow}
+    # parent_side = descendant_labels[grey] - descendant_labels[blue] = {grey, purple, green}
+    #
+    # Manceau, Lambert propose a pairwise comparison of these two sides :
+    #   nearest would be min(MRCA age between all leaves from derived_side and leaves from parent_side)
+    #   oldest would be max
+    #
+    # However, in our implementation, pairwise computation is not necessary
+    #   1. every mutation creates a unique label (infinite allele)
+    #
+    #
+    #
 
             
     if debug:
@@ -540,16 +503,66 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
                 else:
                     parent.add_child(replacement_node)
                     
-                                    
-                
-    if spmodel == "phenotypic" :
-        for leaf in tree.iter_leaves():
-            popInd = [0] * (ndeme + 1)
-            popInd[leaf.deme] = 1
-            leaf.popInd = popInd
         
-    # if spmodel == "paraphyletic" :
+    if spmodel == "paraphyletic" :
+        age_column = {
+            "mutation": "mutation_coalescence_age",
+            "nearest": "nearest_coalescence_age",
+            "oldest": "oldest_coalescence_age"
+        }[age]
     
+        # lineage{} is a dictionary storing the phylogenetic subtree already reconstructed for each label key
+        lineage = {}
+        internal_index = 0
+        for leaf in tree.iter_leaves():
+            label = leaf.sp # we get a label from living labels because ...
+            if label not in lineage: # if this is the first time we encounter this label
+                popInd = [0] * (ndeme + 1) # create the demes matrix
+                popInd[leaf.deme] = 1 # set a presence in the leaf's deme
+                new_leaf = type(tree)() # we create a new tree
+                new_leaf.add_features(
+                    sp = label,
+                    name = "sp" + str(label),
+                    popInd = popInd,
+                    mergedInd = str(leaf.name),
+                    _age = 0.0) # internal attribut _age different from "age" + 0 because leaves are, by definition, present entities
+                lineage[label] = new_leaf
+            else : # if the label was already encountered
+                lineage[label].popInd[leaf.deme] += 1 # then we count it as an individual, that's it
+                lineage[label].mergedInd += " " + str(leaf.name)
+                
+        internal_index = 0
+        
+        for event in sorted(mutation_table, key = lambda row: (row[age_column])):
+            # Primary sort key : ages in the column named "age_column" defined by user. Ascending order (present - past)
+            # in the table of ages but why ???
+            parent_label = event["parent_label"] # we get the parent of the row
+            derived_label = event["label"] 
+            event_age = float(event[age_column])
+            if derived_label not in lineage:
+                continue # skip this "extinct" label event
+            derived_tree = lineage[derived_label] # else if the 
+            if parent_label not in lineage :
+                lineage[parent_label] = derived_tree
+                continue
+            parent_tree = lineage[parent_label]
+            if (not parent_tree.is_leaf() and
+                    abs(parent_tree._age - event_age) < 1e-12):
+                replacement_node = parent_tree
+            else:
+                replacement_node = type(tree)()
+                replacement_node.name = "n" + str(internal_index)
+                internal_index += 1
+                replacement_node.add_features(
+                    sp=None,
+                    _age=event_age
+                )
+                parent_tree.dist = event_age - parent_tree._age
+                replacement_node.add_child(parent_tree)
+            derived_tree.dist = event_age - derived_tree._age
+            replacement_node.add_child(derived_tree)
+            lineage[parent_label] = replacement_node
+        tree = lineage[1]
     
     
 
@@ -585,7 +598,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "phenotypic",
         spmodel=spmodel,
         mu=mu,
         tau=tau,
-        mutation_table=mutation_table)
+        mutation_table = mutation_table,
+        age = age)
     
     if debug:
         # ===== AFTER MERGE =====
