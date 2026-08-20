@@ -9,6 +9,18 @@ Created on Fri Nov 6 13:20:00 2020
 Functions : 
     toPhylo
     ubranch_mutation
+    
+
+References :
+    -  Manceau, M., Lambert, A. The Species Problem from the Modeler’s Point of
+      View. Bull Math Biol 81, 878–898 (2019).
+      https://doi.org/10.1007/s11538-018-00536-2
+      --- Noted Manceau, Lambert 2019.
+    - Michael A. Bender and Martin Farach-Colton,
+      "The LCA Problem Revisited", LATIN 2000, Lecture Notes in Computer
+      Science 1776, pp. 88-94, Springer-Verlag, 2000.
+      --- Noted Bender, Martin 2000.
+    
 
 """
 # TODO : more info in help toPhylo
@@ -84,19 +96,29 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         Divergence-age convention for nodes used for spmodel="paraphyletic".
         
         - "mutation"
-        Use the age of apparition of the label.
+        Use the age of apparition of the derived label on the genealogy to
+        compute phylogenetic nodes.
         
         - "nearest"
         Use the shortest pairwise coalescence age between present-day
         representatives of the derived-side and the present-day representatives
-        of the parent-side. Under the infinite allele, a shortcut is used to
-        avoid computing pairwise distances (more in doc)
+        of the parent-side.
         
         - "oldest"
         Use the longest pairwise coalescence age between present-day
         representatives of the derived-side and the present-day representatives
-        of the parent-side. Under the infinite allele, a shortcut is used to
-        avoid computing pairwise distances (more in doc).
+        of the parent-side.
+        
+        For "nearest" and "oldest", the definition found in Manceau, Lambert
+        2019 informs us "The first two possibilities consist in relying on a
+        time of divergence between individuals of the newly derived species and
+        individuals of the ancestral, mother, species". So to find this node,
+        we have to compute distances pairwise for every individuals of each
+        species u and v. In this list of ages, min() is the nearest
+        phylogenetic node and max() is the oldest phylogenetic node.
+        However pairwise queries can take way too much computing time so it is
+        implemented as an ±1-RMQ query (explanation within the code and this
+        reference : Bender, Farach-Colton 2000).
 
     force_ultrametric = True : bool
         Whether or note to force phylogenetic tree ultrametry 
@@ -121,7 +143,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     --------
     >>>
     """
-    # Idiot proof
+    # User inputs
     if tree.__class__.__name__ != 'TreeNode' :
         raise ValueError('tree must have a class TreeNode')
     if mu < 0 or mu > 1 or not isinstance(mu, (int,float)):
@@ -140,19 +162,35 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     if age not in ["mutation", "nearest", "oldest"]:
         raise ValueError("age must be either 'mutation', 'nearest' or 'oldest'")
 
-    # init some parameters
+    #==========================================================================
+    # MUTATION MOTOR ON THE GENEALLOGY
+    #==========================================================================
+    
     innerNodeIndex = 0
     nIndsORI = 0
     spID = 1
     demeID = 0
     ndeme = 0
     
-    sp_origin = {1: tree}
+    sp_origin = {1: tree} # Genealogy node where each label appears, 1 appears at the root
     tree_height = max(tree.get_distance(leaf) for leaf in tree.iter_leaves())
-    mutation_table = [] 
+    mutation_table = [] # Records all mutation events
     
-    # mutation model on branches
-    for node in tree.traverse("preorder"): # traverse les noeuds
+    # Assign mutations along the genealogy
+    # 
+    # The input genealogy is traversed from ancestors toward descendants
+    # ("preorder"). Every node and leaf inherit its parent's label as when a
+    # mutation occurs on a branch, it runs down on descendants.
+    #                      ┌───── blue_ind1
+    #                 ┌────┤
+    #                 │    └*red─ red_ind1
+    #     ───────*blue┤
+    #                 │        ┌─ yellow_ind1
+    #                 └─*yellow┤
+    #                          └─ yellow_ind2
+    # Here the mutation blue got overwrite by mutations red and yellow.
+    
+    for node in tree.traverse("preorder"):
         try:
             node.mut
         except AttributeError:
@@ -175,30 +213,29 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
             node.deme = int(name_deme[1])
             node.name = name_deme[0]
             
-        is_leaf = node.is_leaf()
-        
-        # Inherit sp label from parent, if None, it means that we are at the
-        # root, we set it to 1 because preorder begins with the root. So we 
-        # don't allow mutation above the root (ubranch_mutation would return
-        # False anyway) and we don't label it as an internal node because
-        # node.up.sp doesn't exist for the root
-        if node.up is None:
-            node.add_features(sp=1)
-            continue
+        is_leaf = node.is_leaf() # check if current node is a leaf
+
+        if node.up is None: # if we are at the root
+            node.add_features(sp=1) # then set it as sp=1
+            continue # no mutation can happen above a root : there's no branch
         else:
-            node.add_features(sp=node.up.sp)
+            node.add_features(sp=node.up.sp) # else inherit parent label
         
         umut, mut_from_parent = ubranch_mutation(node = node, mu = mu, tau = tau)
+        # stochastic mutation event : see doc or code below of "ubranch_mutation"
+        # to get more information.
         
         if not umut:
             continue
         
-        # umut is True : new label overwritting
+        # umut is True : a mutation occured on the branch between node and node.up
+        # because we are working in an infinite allele assumption we can simply add
+        # "1" to a global species naming variable spID.
         
         parent_label = node.sp # get parent sp from node before overwritting it
-        spID += 1
-        node.sp = spID
-        sp_origin[spID] = node
+        spID += 1 # infinite allele global species naming variable
+        node.sp = spID # overwrite the sp attribute
+        sp_origin[spID] = node # remember that spID occured at node "node"
         node.mut = "*" # for debugging when printing the tree
         
         # Mutation age information
