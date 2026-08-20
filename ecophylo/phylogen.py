@@ -238,7 +238,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         sp_origin[spID] = node # remember that spID occured at node "node"
         node.mut = "*" # for debugging when printing the tree
         
-        # Mutation age information
+        # For that mutation event, we convert its position of occurrence alog the branch
+        # in age before present. This is for "mutation" age-convention.
         
         parent_name = node.up.name
         child_name = node.name
@@ -262,16 +263,19 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
             "nearest_coalescence_age": None, # Lambert scenario a
             "oldest_coalescence_age": None # Lambert scenario b
             })
-
+    #================================================================================================================
+    # "nearest" and "oldest" in paraphyletic trees
+    #================================================================================================================
     # In a strictly monophyletic species tree, the divergence time between two species is defined by a single node
-    # because each species is a clade.
-    # This is no longer the cas when species are non-monophyletic, which is the case of gene trees that we
-    # want to transform into species trees.
-    # 
-    # In a paraphyletic partition of species, different pairs of individuals belonging to the same two species
-    # can have different MRCA ages.
+    # because each species is a clade. Therefore, the monophyletic node is also the divergence node.
+    # This is no longer true when species are non-monophyletic, which is the case of the gene trees that we
+    # want to transform into species trees. This multiple divergence node problem is due to ancestral retention that may
+    # distribute a label across different part of the genealogy (see grey label in the genealogy below).
     #
-    # This is highlighted by Manceau and Lambert, they propose three age conventions :
+    # Therefore, in a paraphyletic partition of species, different pairs of individuals belonging
+    # to the same two species can have different MRCA ages (see grey -> green transition below).
+    #
+    # This is highlighted by Manceau & Lambert (2019), they propose three age conventions to assign a divergence node :
     #   nearest : the shortest coalescence time among all pairs of individuals from both species
     #   oldest : the longest coalescence time
     #   mutation : the date of birth of the derived character
@@ -305,12 +309,12 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     # This genealogy gives us this mutation_table : 
     #       grey -> blue :
     #           - mutation = 70
-    #           - nearest = 75 on n3
-    #           - oldest = 100 on n1
+    #           - nearest = 75 on n3 (special case)
+    #           - oldest = 100 on n1 (special case)
     #       grey -> purple :
     #           - mutation = 50
-    #           - nearest = 75 on n2
-    #           - oldest = 100 on n1
+    #           - nearest = 75 on n2 (because the shortest coalescence time in pairwise individuals is LCA(purple_ind1, grey_ind1))
+    #           - oldest = 100 on n1 (because the longest coalescence time in pairwise individuals is LCA(purple_ind1, grey_ind2/3/4))
     #       blue -> red :
     #           - mutation = 45
     #           - nearest = 50 on n4
@@ -321,12 +325,9 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     #           - oldest = 50 on n4
     #       grey -> green :
     #           - mutation = 27
-    #           - nearest = 30 on n8
-    #           - oldest = 100 on n1
-    
-    
-    
-    
+    #           - nearest = 30 on n8 (because the shortest coalescence time in pairwise individuals is LCA(green_ind1, grey_ind2))
+    #           - oldest = 100 on n1 (because the longest coalescence time in pairwise individuals is LCA(green_ind1, grey_ind1))
+    #
     # Now in our model : 
     # For each mutation event, a parent label gives rise to a derived label
     # Multiple outcomes are possible : 
@@ -335,28 +336,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     # - A derived label becomes a parent label by giving rise to multiple new derived labels and only none of its descendants
     #   in the present-day carry the label, existing only as an internal label.
     #
-    # Example, marked by a star all speciation events :
-    #                         ┌───────*purple─── purple_ind1
-    #                  ┌──────┤
-    #                  │      └───────────────── grey_ind1
-    #                  │           
-    #                  │      
-    #                  │                  ┌───── red_ind1
-    #          grey  ──┤             ┌*red┤
-    #                  │             │    └───── red_ind2
-    #                  │      ┌─*blue┤
-    #                  │      │      │        ┌─ yellow_ind1
-    #                  │      │      └*yellow─┤
-    #                  │      │               └─ yellow_ind2
-    #                  └──────┤
-    #                         │         ┌*green─ green_ind1
-    #                         │      ┌──┤
-    #                         │      │  └─────── grey_ind2
-    #                         └──────┤
-    #                                │  ┌─────── grey_ind3
-    #                                └──┤
-    #                                   └─────── grey_ind4
     #
+    # -- Case 3 : blue label
     # The label "grey" still exists at the present-day because of ancestral retention, and gave rise to "green", "blue" and "purple" label
     # The label "blue" label deriving from "grey" label is also a parent label for "red" and "yellow" labels
     # "blue" label is not found in its descendants but is part of their evolutionnary history.
@@ -377,18 +358,11 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     # And we have descendant_labels[blue] : {blue, red, yellow}
     #
     # To compare the two sides of the transition, we can substract them.
-    # derived_side = descendant_labels[blue] = {blue, red, yellow}
-    # parent_side = descendant_labels[grey] - descendant_labels[blue] = {grey, purple, green}
-    #
-    # Manceau, Lambert propose a pairwise comparison of these two sides :
-    #   nearest would be min(MRCA age between all leaves from derived_side and leaves from parent_side)
-    #   oldest would be max
-    #
-    # However, in our implementation, pairwise computation is not necessary
-    #   1. every mutation creates a unique label (infinite allele)
-    #
-    #
-    #
+    # derived_side_labels = descendant_labels[blue] = {blue, red, yellow}
+    # parent_side_labels = descendant_labels[grey] - descendant_labels[blue] = {grey, purple, green}
+    # Therefore : 
+    # derived_leaves = [red_ind1, red_ind2, yellow_ind1, yellow_ind2]
+    # parent_leaves = [purple_ind1]
 
             
     if debug:
