@@ -15,11 +15,11 @@ References :
     -  Manceau, M., Lambert, A. The Species Problem from the Modeler’s Point of
       View. Bull Math Biol 81, 878–898 (2019).
       https://doi.org/10.1007/s11538-018-00536-2
-      --- Noted Manceau, Lambert 2019.
+      ↳ Noted Manceau & Lambert (2019).
     - Michael A. Bender and Martin Farach-Colton,
       "The LCA Problem Revisited", LATIN 2000, Lecture Notes in Computer
       Science 1776, pp. 88-94, Springer-Verlag, 2000.
-      --- Noted Bender, Martin 2000.
+      ↳ Noted Bender & Farach-Colton (2000).
     
 
 """
@@ -31,32 +31,44 @@ import numpy as np
 def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic", 
             force_ultrametric = True, age = "mutation", seed = None, debug = False):
     """
-    Merge branches of genealogy following speciation model of the user choice 
-    after sprinkling mutation events over the branches of simulated genealogies
-    depending on branch lengths. 
-    
-    Mutation events are sprinkled over the branches of simulated genealogies 
-    depending on branch lengths, so that the number of mutations over a branch 
-    follows a Poisson distribution with parameter 𝜇·𝐵 where 𝜇 is the point 
-    mutation rate and 𝐵 is the length of the branch. 
+    Transform a genealogy of individuals according to species model and
+    definition.
+    Mutations are sprinkled independently under the infinite allele assumption
+    according to a Poisson process, each mutational event is passed down to the
+    nodes below and can be overwriten by any other mutational event. We used
+    the Poisson process of parameters 𝜇·𝐵 where 𝜇 is the point mutation rate
+    and 𝐵 is the length of the branch. Rather than counting total events
+    number on the branch, we sample the first mutation using an exponential
+    distribution of parameter 𝜇 (Waiting Time T) and checked if it was on the
+    branch (T ≤ 𝐵 : the first mutation occured on the branch) or outside
+    (T ≥ 𝐵 : the first mutation couldn't occur on the branch), see more in
+    ubranch_mutation() documentation.
     
     The descendants stemming from a branch with at least one mutation define
     a genetically distinct clade. These clades can be paraphyletic because of
     ancestral retention. Either the user choose to accept paraphyletic gene
     histories ('spmodel = paraphyletic'), or to impose monophyly. For every
-    gene tree exist a species partition satisfying either A or B. These
-    differences in species tree can be compared to the taxonomist opposition
-    between splitter and lumper.
+    gene tree exist a species partition satisfying either A or B, along M.
+     - (A) : Heterotypy between species.
+     - (B) : Homotoypy within species.
+     - (M) : Monophyly.
+    These differences in species tree can be compared to the taxonomist
+    opposition between splitter and lumper. See Manceau & Lambert (2019), they
+    called the two combinations (AM) and (BM) 'loose' and 'lacy' species
+    partition and (AB) 'phenotypic' that we chose to call 'paraphyletic'.
     
     Parameters
     ----------
     tree : TreeNode (ete3 class)
         A tree representing the genealogy of simulated individuals.
+        
     mu : float
-        point mutation rate, must be comprised between between 0 and 1. 
+        Point-mutation rate, must be comprised between between 0 and 1.
+        
     tau = 0 : float
         The minimum number of generations monophyletic lineages have to be 
         seperated for to be considered distinct species
+        The minimum time on a branch that have to pass for mutation to occur.
         
         
     spmodel = {"genealogy", "loose", "lacy", "paraphyletic"}
@@ -64,11 +76,13 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
 
         - "genealogy"
         The complete genealogy is retained after mutation sprinkling.
-        Cannot be coerced in a species tree.
+        Cannot be forced into a species tree or a LTT (later implementation
+        may allow genealogical-LTT).
         
         - "loose"
         The complete genealogy is collapsed in a set of monophyletic clades
-        according to the "loose species partition" from Manceau, Lambert 2018.
+        according to the "loose species partition" from Manceau & Lambert
+        (2019).
         The loose species partition aims to respect heterotypy between species,
         individuals in different species are genetically different for each
         species cluster. This is the finest partition of the present-day
@@ -78,22 +92,79 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         
         - "lacy"
         The complete genealogy is collapsed in a set of monophyletic clades
-        according to the "lacy species partition" from Manceau, Lambert 2018.
+        according to the "lacy species partition" from Manceau & Lambert
+        (2019).
         The lacy species partition aims to respect homotypy within species,
         individuals within the same species are genetically identical for each
         species cluster. This is the coarsest partition of the present-day
-        individuals as it usually needs to XXXXX : individuals with the same
-        labels can be in different species. This is equivalent to splitters.
+        individuals as it usually needs to seperate two paraphyletic parts :
+        individuals with the same labels can be in different species.
+        This is equivalent to splitters.
         
         - "paraphyletic"
         The complete genealogy is collapsed in a set of monophyletic lineages
-        as a "label-tree" rather than a species tree. This is equivalent to
-        Hubbell's UNTB and associated research (Jabot & Chave 2009). See more
-        in Manceau, Lambert 2018 but note what we call "paraphyletic" is
-        analogous to what they call "phenotypic", implying phenotypes.
+        as a "label-tree" rather than a species tree. The label-tree tries to
+        represent relations between labels at the cost of the genealogy
+        representativity and may produce unresolved nodes because of age
+        conventions.
         
     age = {"mutation", "nearest", "oldest"}, default="mutation"
         Divergence-age convention for nodes used for spmodel="paraphyletic".
+        When inspecting relations between species u and v, u being
+        paraphyletic, then u and v can have multiple common ancestors on
+        different nodes.
+
+                              ┌───── grey_ind1
+                         ┌────┤n4
+                         │    └───── grey_ind2
+                  ┌──────┤n2
+                  │      │        ┌─ red_ind1
+                  │      └*red────┤n5
+                  │               └─ red_ind2
+           ─*grey─┤n1
+                  │         ┌─────── grey_ind3
+                  │      ┌──┤n6
+                  │      │  └*yellow─ yellow_ind1
+                  └──────┤n3
+                         │  ┌─────── grey_ind4
+                         └──┤n7
+                            └─────── grey_ind5
+        
+        100     75    50    25    0 BP
+    
+        We can see here that all individuals of two species don't share the
+        same common ancestor : in the relation red and grey, red_ind1 and
+        grey_ind1 have a common ancestor at node n2. But red_ind1 and grey_ind5
+        have a common ancestor at node n1. Manceau & Lambert (2019) pose 3
+        conventions, 1. to use a nearest age convention 2. to use a oldest age
+        convention. 3. to use the timing of the mutation event as divergence
+        node (usually used in UNTB models). For "nearest" and "oldest", the
+        definition found in Manceau & Lambert (2019) informs us "The first two
+        possibilities consist in relying on a time of divergence between
+        individuals of the newly derived species and individuals of the
+        ancestral, mother, species". So to find this node, we have to compute
+        distances pairwise for every individuals of each species u and v.
+        In this list of ages, min() is the nearest phylogenetic node and max()
+        is the oldest phylogenetic node. In this example,
+        mutation : 
+                               ┌──── red
+                            ┌──┤
+                            │  └──── grey
+                            └─────── yellow
+                       50     25    0 BP
+        nearest :
+                              ┌───── red
+                         ┌────┤
+                         │    └───── grey
+                         └────────── yellow
+                       50     25    0 BP
+        oldest : 
+                  ┌───────────────── grey
+                  │
+                 ─┼───────────────── red
+                  │
+                  └───────────────── yellow
+                75     50     25    0 BP
         
         - "mutation"
         Use the age of apparition of the derived label on the genealogy to
@@ -109,13 +180,6 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         representatives of the derived-side and the present-day representatives
         of the parent-side.
         
-        For "nearest" and "oldest", the definition found in Manceau, Lambert
-        2019 informs us "The first two possibilities consist in relying on a
-        time of divergence between individuals of the newly derived species and
-        individuals of the ancestral, mother, species". So to find this node,
-        we have to compute distances pairwise for every individuals of each
-        species u and v. In this list of ages, min() is the nearest
-        phylogenetic node and max() is the oldest phylogenetic node.
         However pairwise queries can take way too much computing time so it is
         implemented as an ±1-RMQ query (explanation within the code and this
         reference : Bender, Farach-Colton 2000).
@@ -125,7 +189,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     seed = None : int
         None by default, set the seed for mutation random events.
     debug = False : bool
-        change the return function, returns a tuple containing the phylogeny,
+        Change the return function, returns a tuple containing the phylogeny,
         the number of species before the partitioning, the number of species
         after the partitioning, the number of singleton before the partitioning
         the number of singleton after the partitioning, the tmrca of the tree
