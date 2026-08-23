@@ -214,7 +214,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         raise ValueError('mu must be a float between 0 and 1')
     if not spmodel in ['loose', 'lacy', 'genealogy', 'paraphyletic']:
         raise ValueError(spmodel+' is not a correct model. '+
-                'spmodel must be either "loose", "lacy", "genealogy" or "paraphyletic" string')
+                'spmodel must be either "loose", "lacy", "genealogy" or ',
+                '"paraphyletic" string')
     if not isinstance(force_ultrametric, bool):
         raise ValueError('force_ultrametric must be a boolean')
     if not isinstance(debug, bool):
@@ -224,7 +225,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     if seed is not None:
         np.random.seed(seed) # Initialize RNG vector
     if age not in ["mutation", "nearest", "oldest"]:
-        raise ValueError("age must be either 'mutation', 'nearest' or 'oldest'")
+        raise ValueError('age must be either "mutation", "nearest" or ',
+                         '"oldest"')
 
     #==========================================================================
     # MUTATION MOTOR ON THE GENEALLOGY
@@ -302,8 +304,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         sp_origin[spID] = node # remember that spID occured at node "node"
         node.mut = "*" # for debugging when printing the tree
         
-        # For that mutation event, we convert its position of occurrence alog the branch
-        # in age before present. This is for "mutation" age-convention.
+        # For that mutation event, we record it in a mutation_table.
         
         parent_name = node.up.name
         child_name = node.name
@@ -402,7 +403,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     #
     #
     # -- Case 3 : blue label
-    # The label "grey" still exists at the present-day because of ancestral retention, and gave rise to "green", "blue" and "purple" label
+    # The label "grey" still exists at the present-day because of ancestral retention,
+    # and gave rise to "green", "blue" and "purple" label.
     # The label "blue" label deriving from "grey" label is also a parent label for "red" and "yellow" labels
     # "blue" label is not found in its descendants but is part of their evolutionnary history.
     # We have to count for all deriving labels and not only ones on the leaves : they are analoguous in a way to
@@ -412,10 +414,11 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     # at the present-day. When trying to compute oldest and nearest coalescence age for the transition between
     # "grey" --> "blue" labels we need to take all individuals carrying derived labels from "blue", which are "red" and "yellow".
     # To find the nearest/oldest coalescence time between "grey" and "blue" we have to compare pairwise the min and max
-    # coalescence times of all "yellow-red" individuals and all "black individuals".
+    # coalescence times of all "yellow-red" individuals and all "grey" individuals. This is only possible because we are
+    # in a infinite allele model.
     #
     # Let's see the transition "grey" -> "blue" :
-    # Being part of grey individuals doesn't only mean you still hold a "grey" label. It can also mean you once hold a "grey" label,
+    # Being part of grey individuals doesn't only mean you still hold a "grey" label. It can also mean you once hold a "grey" label, 
     # that was replaced by another label (or allele, as we can compare the approach to the infinite allele model).
     #
     # Now we have descendant_labels[grey] : {grey, green, yellow, red, blue, purple}
@@ -426,7 +429,13 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     # parent_side_labels = descendant_labels[grey] - descendant_labels[blue] = {grey, purple, green}
     # Therefore : 
     # derived_leaves = [red_ind1, red_ind2, yellow_ind1, yellow_ind2]
-    # parent_leaves = [purple_ind1]
+    # parent_leaves = [purple_ind1, grey_ind1, grey_ind2, grey_ind3, grey_ind4, green_ind1]
+    #
+    # Nearest and oldest are then computed as min/max MRCA ages over the complete Cartesian
+    # producted of derived_leaves x parent_leaves as mentioned in Bender & Farach-Colton (2000).
+    #
+    # Couvert et al. (2024) support such a conceptual difference between
+    # historical label ancestry and
 
             
     if debug:
@@ -599,7 +608,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
             # 
             # Context : 
             # In ETE3 one simple pairwise query LCA(u,v) costs O(h) time where h is the topological
-            # height of the genealogy.
+            # height of the genealogy. This means that the bigger the tree is, the more computation time will be needed.
             # The problem is that ecophylo has multiple mutations µ that change the leaves identities.
             # e is one readable mutation on leaves.
             # Let's have the mutation e, splitting a node between a derived D_e side and a parent
