@@ -114,57 +114,90 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         paraphyletic, then u and v can have multiple common ancestors on
         different nodes.
 
-                              ┌───── grey_ind1
-                         ┌────┤n4
-                         │    └───── grey_ind2
-                  ┌──────┤n2
-                  │      │        ┌─ red_ind1
-                  │      └*red────┤n5
-                  │               └─ red_ind2
-           ─*grey─┤n1
-                  │         ┌─────── grey_ind3
-                  │      ┌──┤n6
-                  │      │  └*yellow─ yellow_ind1
-                  └──────┤n3
-                         │  ┌─────── grey_ind4
-                         └──┤n7
-                            └─────── grey_ind5
-        
-        100     75    50    25    0 BP
+                              ┌──────*purple──── purple_ind1
+                       ┌──────┤n2
+                       │      └───────────────── grey_ind1
+                       │
+                       │
+                       │                  ┌───── red_ind1
+               grey  ──┤n1           ┌*red┤n6
+                       │             │    └───── red_ind2
+                       │      ┌─*blue┤n4
+                       │      │      │        ┌─ yellow_ind1
+                       │      │      └─*yellow┤n7
+                       │      │               └─ yellow_ind2
+                       └──────┤n3
+                              │         ┌*green─ green_ind1
+                              │      ┌──┤n8
+                              │      │  └─────── grey_ind2
+                              └──────┤n5
+                                     │  ┌─────── grey_ind3
+                                     └──┤n9
+                                        └─────── grey_ind4
+
+                      100     75    50    25    0 BP
     
         We can see here that all individuals of two species don't share the
         same common ancestor : in the relation red and grey, red_ind1 and
-        grey_ind1 have a common ancestor at node n2. But red_ind1 and grey_ind5
+        grey_ind2 have a common ancestor at node n3. But red_ind1 and grey_ind1
         have a common ancestor at node n1. Manceau & Lambert (2019) pose 3
-        conventions, 1. to use a nearest age convention 2. to use a oldest age
-        convention. 3. to use the timing of the mutation event as divergence
-        node (usually used in UNTB models). For "nearest" and "oldest", the
-        definition found in Manceau & Lambert (2019) informs us "The first two
-        possibilities consist in relying on a time of divergence between
-        individuals of the newly derived species and individuals of the
-        ancestral, mother, species". So to find this node, we have to compute
-        distances pairwise for every individuals of each species u and v.
+        conventions,
+            1. to use a nearest age convention
+            2. to use a oldest age convention.
+            3. to use the timing of the mutation event as divergence node 
+               (usually used in UNTB models).
+        For "nearest" and "oldest", the definition found in Manceau &
+        Lambert (2019) informs us "The first two possibilities consist in
+        relying on a time of divergence between individuals of the newly
+        derived species and individuals of the ancestral, mother, species".
+        So to find this node, we have to compute distances pairwise for every
+        individuals of each species u and v.
+        Historical labels may also exist : DEFINITION TO BE DONE.
         In this list of ages, min() is the nearest phylogenetic node and max()
-        is the oldest phylogenetic node. In this example,
-        mutation : 
-                               ┌──── red
-                            ┌──┤
-                            │  └──── grey
-                            └─────── yellow
-                       50     25    0 BP
+        is the oldest phylogenetic node.
+        In this example,
+        mutation :
+
+
+                            ┌──────────── purple
+                      ┌─────┤
+                      │     │      ┌───── grey
+                      │     └──────┤
+                      │            └───── green
+                      │    
+                      ┤
+                      │          ┌──────── red
+                      └──────────┤
+                                 └──────── yellow
+
+                      70    50    25     0 BP
+                      
         nearest :
-                              ┌───── red
-                         ┌────┤
-                         │    └───── grey
-                         └────────── yellow
-                       50     25    0 BP
-        oldest : 
-                  ┌───────────────── grey
-                  │
-                 ─┼───────────────── red
-                  │
-                  └───────────────── yellow
-                75     50     25    0 BP
+
+                            ┌──────────── purple
+                            │
+                            │      ┌───── grey
+                      ──────┼──────┤
+                            │      └───── green
+                            │
+                            │      ┌───── red
+                            └──────┤
+                                   └───── yellow
+                                   
+                           50     25    0 BP
+        oldest :
+
+                            ┌──────────── grey
+                            │
+                            ├──────────── purple
+                      ──────┤
+                            ├──────────── green
+                            │
+                            │      ┌───── red
+                            └──────┤
+                                   └───── yellow
+                                   
+                    75     50     25    0 BP
         
         - "mutation"
         Use the age of apparition of the derived label on the genealogy to
@@ -606,27 +639,37 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
             # Bender & Farach-Colton LCA algorithm
             # ========================================================================================================
             # 
+            # h is the topological height of the genealogy : max number of edges between root and leaves.
+            # n is the number of nodes.
+            # l is the number of leaves.
+            # µ is the number of mutations and m is one mutation.
+            #
             # Context : 
             # In ETE3 one simple pairwise query LCA(u,v) costs O(h) time where h is the topological
             # height of the genealogy. This means that the bigger the tree is, the more computation time will be needed.
-            # The problem is that ecophylo has multiple mutations µ that change the leaves identities.
-            # e is one readable mutation on leaves.
+            #
+            #   - In a balanced binary tree, a query costs at most O(log₂(l)) because h = log₂(l) levels : each level doubles at each node
+            #   - In an unbalanced binary tree, a query costs at most O(l) because h = l levels : each leaf has its own level
+            #
+            # The problem is that ecophylo has multiple mutations µ that change the leaves identities so we need µ queries.
+            # m is one readable mutation on leaves.
             # Let's have the mutation e, splitting a node between a derived D_e side and a parent
-            # P_e side so that D_e = 2 leaves and P_e = 2 leaves :
+            # P_m side so that D_m = 2 leaves and P_m = 2 leaves :
             #
             #            R
-            #          /   \* mutation e
+            #          /   \* mutation m
             #         A     B
             #        / \   / \
             #       W  X  Y_e Z_e
             #
-            # Then if Q_e = 2 x 2 = 4 ; for every e mutations readable on leaves we have :
-            #                        Q = ∑_e(​∣D_e​∣ x ​∣P_e​∣)
-            # For all Q pairwise comparisons it costs :
-            #   - O(Qh)
-            #     = O(Q log(n)) for a balanced binary tree
-            #     = O(Qn) in the worst case ; upper bound
-            #
+            # Then if Q_m = 2 x 2 = 4 queries for mutation m ;
+            # for every m mutations readable on leaves we have : Q_µ = ∑_m(Q_m) = ∑_m(​∣D_m​∣·​∣P_m​∣) for all µ mutations where D_mi and P_mi
+            # aren't equally distributed for each m mutation of µ (some are deep and scan the whole tree, some are recent and scan only two
+            # leaves). So Q_µ is a complex number unique for each tree and is not only depending on how many mutations there are.
+            # For all Q_µ pairwise comparisons queries it costs :
+            #   - O(Q_µ·h)
+            #     = O(Q_µ·log₂(l)) in a balanced tree
+            #     = O(Q_µ·l) in an unbalanced tree
             #
             # Bender & Farach-Colton show that a LCA (Least Common Ancestor) query on a tree 
             # can be reduced to a RMQ (Range Minimum Query) on the Euler_L array.
@@ -635,11 +678,15 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
             # Their Lemma 1 states precisely that if RMQ has preprocessing/query
             # complexity <f(n), g(n)>, then LCA on an n-node tree has complexity:
             #
-            #             <f(2*n - 1) + O(n), g(2*n - 1) + O(1)>
+            #             <f(2n - 1) + O(n), g(2n - 1) + O(1)>
             #
-            # The goal of this algorithm is to preprocess a rooted tree so that repeated LCA queries
-            # can subsequently be answered in constant O(1) time and so for all pairwise comparisons
-            # it would cost O(Q) query time.
+            # Because a Euler array is constructed by traversing again and again nodes, it has 2n-1 positions (more later).
+            # If the RMQ table is precomputed for every [i,j] with a trivial approach, f(2n - 1) costs O((2n-1)²) = O(n²)
+            # because we construct all intervals [i,j] for every starting i and ending j in the Euler_L array.
+            # between all positions pairwise. But this allows query time to be O(1).
+            # Therefore complexity is : <O(n²) + O(n), O(1)> = <O(n²), O(1)> (because O(n²) >> O(n))
+            #
+            # Depending on the number of Q_µ, the ETE3 algorithm can be quicker, however, more computing effort will reduce this complexity.
             #
             # Reference:
             # Michael A. Bender and Martin Farach-Colton,
@@ -703,117 +750,120 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
                     euler_L.append(level)
                     
             # However without further RMQ preprocessing, the minimum has to be found by scanning
-            # Euler_L between Euler_R[u] and Euler_R[v]. For one pair (u, v), the number of Euler_L
-            # positions is ​∣Euler_R[u] - Euler_R[v]​∣ + 1.
-            # Therefore for all Q pairwise comparisons the number of Eleur_L positions is
-            # ∑_e ∑_(u in D_e) ∑_(v in P_e) (|Euler_R[u] - Euler_R[v]| + 1)
+            # Euler_L between Euler_R[u] and Euler_R[v]. One scan could cost us O(n) in the worst case where the
+            # interval Euler_R[u] and Euleur[v] are the two most far appart leaves of the tree and less on shorter scans.
+            # This is not very different from ETE3 algorithm except that we traverse the tree horizontally on an array so we can say that
+            # the computation effort for ETE3 is comparable to the Euler scan O(Q_µ·l) ~ O(Q_µ·n).
             #
-            # Since Euler_L contains 2n-1 positions, one RMQ interval can contain O(n) positions
-            # Therefore O(Qn) in the worst case for all Q comparisons. With the difference of the
-            # ETE3 approach moving vertically in the tree and RMQ naïve moving horizontically in the
-            # Euler's arrays. Both algorithm are different but can show similar computation time.
-            # Needed demonstration : maybe TBD if I've got time, if I'm really motivated or if I can't
-            # sleep - written by Théo on August the 19th at 2:21am.
-            # Especially upper bounded time that we should focus on as ecophylo tries to allow
-            # big computation capacities.
+            # We can build a RMQ table costing O(n²) but making the one scan cost O(1), and for all queries O(Q_µ).
+            # The first solution has cheap preprocessing (Euler Tour) and potentially expensive scanning cost (just like ETE3),
+            # the RMQ table has expensive preprocessing time but constant query time. Bender & Farach-Colton (2000) now search for
+            # an algorithm that keeps O(1) query time but has reduced preprocessing time.
             #
-            # We now need a data structure able to answer queries without scanning the entire
-            # interval RMQ_Euler_L(Euler_R[u], Euler_R[v]) that answers LCA(u, v), the proposed
-            # optimisations are
-            #       1. a Sparse Table processed in O(n x log(n)) time and allowing every query to be
-            #          processed in O(1) time so all the algorithm costs <O(n x log(n), O(1)> for one scan
-            #          and <O(n x log(n), O(Q)> for all the pairwise comparison between derived and parent side.
+            # The proposed optimisations are
+            #       1. a Sparse Table processed in O(n·log₂(n)) time and allowing every query to be
+            #          processed in O(1) time so all the algorithm costs <O(n·log₂(n), O(1)> for one scan
+            #          and <O(n·log₂(n), O(Q_µ)> for all the pairwise comparison between derived and parent side.
             #       2. a ±1-RMQ array : our L array scanned by RMQ is already a ±1-RMQ array because
             #          all possibles relations movements are toward parent/children (+1 or -1 level).
-            #          That special L is called A. 
-            # Section 4 then exploits the special ±1 property of the L-array to reduce preprocessing
-            # to O(n) and keeping a query time to O(1). Therefore, scanning all pairwise comparisons
-            # cost O(n) + O(Q) between derived and parent side. Because they showed that LCA queries
-            # can be reduced to RMQ queries but where Euler-L is a ±1-RMQ array, we can apply this
-            # next optimisations : 
-            # Bender & Farach-Colton partition the ±1-RMQ into small blocks of size approx
-            # floor(log2(euler_size)/2) and max(1, ...) prevents a block of size 0,
-            # and ceil(euler_size / b_size) is the max number of blocks to completely cover
-            # Euler_L. Ceil() allows the last block to be shorter if needed.
+            #          That special L is called A, the ±1-RMQ array.
             #
+            # Instead of storing the position of the minimum of every interval in a matrix RMQ_table[i][j] = argmin(Euler_L[i : j+1]),
+            # a Sparse Table stores the position of minima only for intervals of lengths being powers of two so that M[i][k] = argmin(Euler_L[i : i + 2ᵏ].
+            # In M, M[i][0] has 2^0 values ; M[i][2] has 2^2 = 4 values and M[i][3] has 2^3 = 8 values.
+            # This Sparse Table requires O(n·log₂(n)) preprocessing cost because when building M[i][k] we can use the two already computed
+            # intervals of length 2ᵏ⁻¹ forming the left and right halves of the new interval, and we already know there minima so we can
+            # deduce the minimum of M[i][k] by comparing minima of M[i][k-1] and M[i + 2ᵏ⁻¹][k-1]. This is dynamic programming.
+            # For any query RMQ(i,j) of length L we choose k so that 2ᵏ < L < 2ᵏ⁺¹ two computed blocks.
+            # These two intervals may overlap, but together they always cover the query length.
             #
+            # We can add optimisation with the unique ±1-RMQ array property to partition the Euler_L array in small blocks of size 
+            # log₂(2n - 1)/2. Each block will store a minimum that we will use to build an array of minima (more later).
+            # However block_size needs to be chose carfully as too many blocks doesn't reduce the computation time and too large blocks make
+            # the computation time of each block too important.
+            #
+            # This A_prime array will be used to build the Sparse Table.
             
             euler_size = len(euler_L) # Number of positions, for n nodes : 2n-1 positions
-            b_size = max(1, (math.floor(math.log2(euler_size) / 2))) 
-            n_blocks = math.ceil(euler_size / b_size)
+            max_block_size = max(1, (math.floor(math.log2(euler_size) / 2))) # max is used to avoid 0 length and floor is used to avoid overtaking euler_size if the last block needs to be smaller.
+            n_euler_blocks = math.ceil(euler_size / max_block_size)
             
             A_prime = [] # An array storing minimum level values contained in each block, A_prime[block]
             B = [] # position of the minimum inside blocks, B[block]
             
-            for block in range(n_blocks):
-                block_start = block * b_size # convert block number (because range()) in a global start position in Euler_L.
-                block_end = min(block_start + b_size, euler_size) # global end position (min() for the final block can't exceed Euler_L)
-                block_length = block_end - block_start
-                local_min_pos = 0 # initiale local position in the block
-                for local_pos in range(1, block_length):
-                    if (euler_L[block_start + local_pos] < euler_L[block_start + local_min_pos]): 
-                        local_min_pos = local_pos # continue to iterate through the block until we find a minimum value and store its position
-                A_prime.append(euler_L[block_start + local_min_pos]) # After scanning the block, store its minimum level in A_prime.
-                B.append(local_min_pos) # After scanning the block, store the position where the minimum occurs.
+            for block in range(n_euler_blocks):
+                euler_block_start = block * max_block_size # convert block number (because range()) in a global start position in Euler_L.
+                euler_block_end = min(euler_block_start + max_block_size, euler_size) # global end position (min() for the final block can't exceed Euler_L)
+                euler_block_length = euler_block_end - euler_block_start
+                euler_block_min_local_pos = 0 # initiate local position in the block
+                for local_pos in range(1, euler_block_length):
+                    if (euler_L[euler_block_start + local_pos] < euler_L[euler_block_start + euler_block_min_local_pos]): 
+                        euler_block_min_local_pos = local_pos # continue to iterate through the block until we find a minimum value and store its position
+                A_prime.append(euler_L[euler_block_start + euler_block_min_local_pos]) # After scanning the block, store its minimum level in A_prime.
+                B.append(euler_block_min_local_pos) # After scanning the block, store the position where the minimum occurs.
             
-            # The Sparse Table M[i][j] stores the position of the minimum in A_prime over the interval starting at i and having length 2**j
-            # M[i][j] = argmin(A_prime[i: i+2**j])
-            # Lets take A_prime = [7, 4, 6, 2, 8, 3, 5, 1], len() is 8
-            # M[i][0] stores the argmin over 2**0 = 1 value, M[i][3] stores the argmin over 2**3 = 8 values (total length)
-            # 1/8 value.s interval starting at i. Further code will make sure that only M[0][3] exists because an 8 value interval
-            # (total length) can only starts from the first position as i.
-            # That's why we are separating the table in columns of length log2(n)+1
+            # Note that we compute one minimum per block. Since the blocks are consecutive and don't overlap, their sum is 2n-1,
+            # the Euler_size. This preprocessing scans on 2n-1 positions costs O(2n-1) = O(n) instead of the O(n²) but further preprocessing
+            # is needed. Now that we have A_prime ready, we can compute the Sparse Table.
+            
+            # The Sparse Table M[i][k] stores the position of the minimum in A_prime over the interval starting at i and having length 2**j
+            # M[i][j] = argmin(A_prime[i : i + 2ᵏ]. (Remember previously it was argmin(Euler_L[i : i + 2ᵏ], note that A_prime < Euler_L).
             #
-            # Why ? Because this allows a query to be O(1) time and not O(n) anymore.
+            # Why can we use A_prime ? When building M[i][k], any j length spanning across several blocks will store the minimum of that interval of length j.
+            # However, this minimum has to be one of the already stored block minima. This means we can use A_prime instead of Euler_L.
+            # Note that this is only true for complete blocks, if we start in the middle of a block and end in the middle of a block, we cannot
+            # assume yet that A_prime knows these two extrema minimum and cannot correctly compare minima of all covered blocks : it will be handled later.
+            #
+            # This "block step" also reduces the computation time of the Sparse Table has we now don't compute euler_size = 2n-1 but the
+            # number of blocks which is len(A_prime) = euler_size / max_block_size ≈ 2*euler_size / log₂(euler_size) (approx because last block may have a different size)
+            # Meaning A_prime contains O(euler_size / log₂(euler_size)) (big-O stills removes constant multiplicator or additions)
+            # Then if the Sparse Table takes O(x log₂(x)) where x is A_prime values then it takes
+            #       O((euler_size/log(euler_size)) * log(euler_size/log(euler_size)))
+            #     = O(euler_size) = O(n)
+            # For now we build A_prime for O(n) and M[i][k] for O(n) ; O(2n) = O(n) (big-O stills removes constant multiplicator or additions)
+            #
+            # Lets take A_prime = [7, 4, 6, 2, 8, 3, 5, 1], len(A_prime) is 8
+            # As explained before, M[i][k] stores the position of the minimum in A_prime over an interval starting at i of length 2ᵏ.
+            # We have the query [2, 7] :
             # positions:          0  1  2  3  4  5  6  7
             # A_prime:           [7, 4, 6, 2, 8, 3, 5, 1]
             #                           |---------------|
             #                              query [2, 7]
             # The query contains 7-2+1 = 6 values
-            # We choose k = floor(log2(6)) = 2 ; Therefore 2**k = 4
-            # We use two already precomputed intervals of length 4 :
+            # We choose k = floor(log₂(6)) = 2 ; Therefore 2ᵏ = 4
+            # We use two already precomputed power-of-two intervals of length 4 :
             #       first interval  = positions [2, 5] = [6, 2, 8, 3]
             #       second interval = positions [4, 7] = [8, 3, 5, 1]
             # For the Sparse Table to returns these :
             #       first = M[2][2]
             #       second = M[4][2]
             # followed by : min(A_prime[first], A_prime[second]) returning the position corresponding to the smaller value.
-            # So one RMQ does not scan its 6 values anymore : it uses two table lookups and one comparison, giving O(1) query time.
-            #
-            # A EXPLIQUER PLUS TARD:
-            # Section 4 applies the Sparse Table to A_prime rather than directly
-            # to the complete +/-1 input array A.
-            #
-            # The paper partitions A into blocks of size log(n)/2 and defines
-            # A_prime with one minimum per block. Therefore A_prime contains
-            # 2*n/log(n) entries.
-            #
-            # The paper then states that running the Sparse Table algorithm on
-            # A_prime takes O(n) preprocessing time.
+            # So one RMQ does not scan its 6 values anymore and apply a unique min() : it uses two table lookups and one comparison,
+            # on two already computed min(), giving O(1) query time instead of O(n).
             
-            M_levels = math.floor(math.log2(len(A_prime))) + 1 # Number of powers 2**j required to represent every possible A_prime interval length
-            M = [[None] * M_levels for _ in range(len(A_prime))] # Allocate one Sparse-Table row per A_prime position, and one column per 2**j interval size
+            M_levels = math.floor(math.log2(len(A_prime))) + 1 # Number of powers 2ᵏ required to represent every possible A_prime interval length
+            M = [[None] * M_levels for _ in range(len(A_prime))] # Allocate one Sparse-Table row per A_prime position, and one column per 2ᵏ interval size
             for i in range(len(A_prime)): # Initialise the first column
-                M[i][0] = i # j=0 is an interval of 1 which the minimum is necessarily at position i
-            for j in range (1, M_levels): # Now we construct the following columns recursively from the previous one (dynamic code)
-                interval_length = 2**j
-                half_length = 2**(j - 1) 
+                M[i][0] = i # k=0 is an interval of 1 which the minimum is necessarily at position i
+            for k in range (1, M_levels): # Now we construct the following columns recursively from the previous one (dynamic code)
+                interval_length = 2**k
+                half_length = 2**(k - 1) 
                 # All interval_length starting at i must remain completely inside A_prime
                 # If len(A_prime) then the last valid starting point for EVERY interval_length is len(A_prime) - interval_length
                 # so 'i' should range from 0 to (len(A_prime) - interval_length) + 1 (range exludes upper bound)
-                # Now in this for loop we're doing dynamic programming
-                # For the column j, the previous column j-1 already stores the minimum position of the left half of j which begins at i and has half_length (2**j-1)
-                # The right half begins at half_length position after i and M already knows its minimum because it has length 2**(j-1)
+                # Now in this for loop we're doing dynamic programming as explained above
+                # For the column k, the previous column k-1 already stores the minimum position of the left half of k which begins at i and has half_length (2**j-1)
+                # The right half begins at half_length position after i and M already knows its minimum because it has length 2ᵏ⁻¹.
                 for i in range(len(A_prime) - interval_length + 1):
-                    left_min = M[i][j - 1]
-                    right_min = M[i + half_length][j - 1]
+                    left_min = M[i][k - 1]
+                    right_min = M[i + half_length][k - 1]
                     if A_prime[left_min] <= A_prime[right_min]: # Now we compare tha A_prime values of the two previous columns to store the position of the minimum of this new column, that is a glued version of the two previous columns of half_length.
-                        M[i][j] = left_min
+                        M[i][k] = left_min
                     else:
-                        M[i][j] = right_min
+                        M[i][k] = right_min
             
             # The Sparse-Table M can now answer RMQ queries over complete blocks through A_prime. But an arbitrary query does not
-            # necessarily begin at the beginning of a block or finish at the end of a block.
+            # necessarily begin at the beginning of a block or finish at the end of a block. This is the extrema problems explained above.
             # For example : the query RMQ(i,j)
             #       [ 0 1 2 3 2 ] [ 3 4 3 2 1 ] [ 2 3 4 3 2 ] = Euler_L separated in blocks
             #            |---------------------------|
@@ -821,423 +871,537 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
             # We can query the middle block with A_prime and M but not the beginning and ending of the query.
             # Observation 3 states that adding or subtracting the same constant from every element of an array does not change its RMQ positions.
             #
-            # For example : 
-            #       original_block   = [5, 6, 7, 6, 5]
-            #       normalised_block = [0, 1, 2, 1, 0]
-            # Both arrays have the same positions for every possible subinterval, we can therefore represent each block only by its ±1 movements
-            # +1 is represented by 1 and -1 is represented by 0.
-            # Lemma 4:
-            # There are O(sqrt(n)) kinds of normalized blocks.
+            # For example we can normalise a block by substracting the first value by itself, making it 0 : 
             #
-            # Section 4 uses blocks containing log(n)/2 values.
-            # Because adjacent values differ by +1 or -1, a normalized block
-            # is completely specified by the movements between consecutive
-            # values, i.e. by a +/-1 vector of length:
+            #       original_block 0   = [7, 8, 9, 8, 7] ; min is the first and 5th value
+            #       normalised_block 0 = [0, 1, 2, 1, 0] ; min is the first and 5th value
             #
-            #                   (1/2 * log(n)) - 1
+            #       original_block 1   = [3, 4, 3, 2, 1] ; min is the 5th value
+            #       normalised_block 1 = [0, 1, 0,-1,-2] ; min is the 5th value
             #
-            # The number of such vectors is:
+            #       original_block 2   = [2, 3, 4, 3, 2] ; min is the first and 5th value
+            #       normalised_block 2 = [0, 1, 2, 1, 0] ; min is the first and 5th value
             #
-            #                   2**((1/2 * log(n)) - 1)
+            # As you can see, the minimum of original and normalised are in the same position despite the transformation.
+            # Because Euler_L is a ±1-array we can describe a normalised block by its internal movements :
             #
-            # which the paper states is O(sqrt(n)).
+            #       normalised_block 0 = [0, 1, 2, 1, 0]
+            #                              +1 +1 -1 -1
+            #       movement_array 0   = [ 1, 1, 0, 0]
+            #
+            #       normalised_block 1 = [0, 1, 0,-1,-2]
+            #                              +1 -1 -1 -1
+            #       movement_array 1   = [ 1, 0, 0, 0]
+            #
+            #       normalised_block 2 = [0, 1, 2, 1, 0]
+            #                              +1 +1 -1 -1
+            #       movement_array 2   = [ 1, 1, 0, 0]
+            #
+            # Here +1 is encoded by 1 and -1 by 0.
+            #
+            # Why is it useful to normalise blocks ? Because it can reduce their nnumber. See original_block 0 and original_block 2, they are
+            # both different but still have the same normalised form. Therefore we can use the same normalised block type to get the same
+            # position information, and to retrieve different Euler value (see that 7 != 2).
+            # How many different block types can exist ?
+            # We have two different possibilities : 1 and 0. In a block there are b values (max_block_size) and there are b-1 movements.
+            # Therefore we can except 2ᵇ⁻¹ different possible movement_arrays (normalised block types). Because we defined b as
+            # log₂(euler_size)/2 = log₂(2n - 1)/2 then this computation effort of normalised blocks is
+            #       2**(b - 1)
+            #       = 2**((log₂(2*n - 1) / 2) - 1)
+            #       = sqrt(2*n - 1) / 2
+            #       = O(sqrt(n))
+
             
             
             
             micro_tables = {} # store one complete in-block RMQ table for every possible normalised ±1 block type.
         
-            for block_length in range(1, b_size + 1): # Consider every possible block length; the final Euler_L block may be shorter then b_size
-                n_signatures = 2**(block_length - 1)
-                for signature in range(n_signatures):
-                    normalised = [0]
-                    for step in range(block_length - 1): # Reconstruct each of the k-1 movements encoded by this signature
-                        shift = block_length - 2 - step # Number of binary (log2) positions remaining to the right of the movement we currently want to read
-                        bit = (signature // (2**shift)) % 2 # Extract this binary digit
-                        if bit == 1: # By convention, binary value 1 represents a +1 Euler movement
-                            normalised.append(normalised[-1] + 1)
-                        else: # By convention, binary value 0 represents a -1 Euler movement
-                            normalised.append(normalised[-1] - 1)
+            for type_length in range(1, max_block_size + 1): # Consider every possible block length; the final Euler_L block may be shorter then max_block_size
+                movement_arrays = [()]
+                for step in range(type_length - 1):
+                    next_possible_movement_arrays = []
+                    for movements in movement_arrays:
+                        next_possible_movement_arrays.append(movements + (1,))
+                        next_possible_movement_arrays.append(movements + (-1,))
+                    movement_arrays = next_possible_movement_arrays
                     
-                    # Allocate a square table for this normalised block
+                    # Recursively,
+                    # movement_arrays[(1),
+                    #                 (-1)]
                     #
-                    # table[left][right] will contain de LOCAL POSITION of the minimum between positions left and right, included.
+                    # movement_arrays[(1,1),
+                    #                 (1,-1),
+                    #                 (-1,1),
+                    #                 (-1,-1)]
+                    #
+                    # For each step, doubling the possibilities with either +1 or -1 at the end (binary)
                     
-                    table = [
-                        [None] * block_length
-                        for _ in range(block_length)
-                    ]
+                for movements in movement_arrays: # movements being each (-1,1,1,-1) blocks of movement_arrays 
+                    normalised_type = [0] # Normalised blocks always start at zero
+                    for movement in movements: # movement being each 1 or -1 inside a block of movement_arrays
+                        normalised_type.append(normalised_type[-1] + movement) # append the previous_value + the movement (+1 or -1) so if previous value is 2 thenwe append either 3 or 1 depending on the movement array we are precomputing
+                    
+                    micro_table = [[None]*type_length for _ in range(type_length)] # precompute every possible RMQ interval inside this block type
+                                                                               # table[left][right] stores the local position of the minimum
+                                                                               # of each query for the normalised block to which the table is built from.
+                                                                               # micro_table =
+                                                                               #         right
+                                                                               #         0     1     2     3     4
+                                                                               #  left 0 None  None  None  None  None
+                                                                               #       1 None  None  None  None  None
+                                                                               #       2 None  None  None  None  None
+                                                                               #       3 None  None  None  None  None
+                                                                               #       4 None  None  None  None  None
+                    for left in range(type_length): # for each line of table
+                        min_pos = left # left is the minimum
+                        micro_table[left][left] = left # [left][left] is a 1 length query : it has to be its own min
+                        for right in range(left+1, type_length): # now we iter through columns of the line "left"
+                            if normalised_type[right] < normalised_type[min_pos]: # if we find a smaller value within the normalised block for this line
+                                min_pos = right  # then we store this new minimum
+                            micro_table[left][right] = min_pos
+                    micro_tables[(type_length, movements)] = micro_table
+                    
+                    # let's take this array :
+                    # positions:      0  1  2  3  4
+                    # values:        [0, 1, 2, 1, 0]
+                    #                          ^
+                    #                        minimum
+                    #
+                    # left = 0 then for interval table[0][0] the minimum is located on... 0.
+                    # then we iter through all columns of line left=0, columns are called "right"
+                    # right = 1 -> interval [0,1] = [0,1] --> min still in position 0
+                    # right = 2 -> interval [0,2] = [0,1,2] --> min still in position 0
+                    # right = 3 -> interval [0,3] = [0,1,2,1] --> min still in position 0
+                    # right = 4 -> interval [0,4] = [0,1,2,1,0] --> min still in position 0
+                    # micro_table =
+                    #         right
+                    #         0     1     2     3     4
+                    #  left 0 0     0     0     0     0
+                    #       1 None  None  None  None  None
+                    #       2 None  None  None  None  None
+                    #       3 None  None  None  None  None
+                    #       4 None  None  None  None  None
+                    # left = 1
+                    # [1,1] = [1]       -> min still in position 1
+                    # [1,2] = [1,2]     -> min still in position 1
+                    # [1,3] = [1,2,1]   -> min still in position 1
+                    # [1,4] = [1,2,1,0] -> min is now in position 4
+                    #         right
+                    #         0     1     2     3     4
+                    #  left 0 0     0     0     0     0
+                    #       1 None  1     1     1     4
+                    #       2 None  None  None  None  None
+                    #       3 None  None  None  None  None
+                    #       4 None  None  None  None  None
+                    
+                    
+                # We have already built one micro_table for every possible normalised block type.
+                # We now need to inspect Euler blocks of Euler_L to determine its precomputed block type.
+                # euler_block_types[euler_block_idx] will store the block type of the "block" euler_block as (euler_block_length, movements)
+                # Therefore when a query starts or ends in the middle of this Euler_L block = [7, 8, 9, 8, 7] (the 7th lets say)
+                # we can euler_block_types[7] and retrieve = (5, (1, 1, -1, -1)) this is a key to find local minima in micro_tables :
+                # micro_tables[(5, (1, 1, -1, -1))]
 
-                    for left in range(block_length):
-
-                        min_pos = left
-                        table[left][left] = left
-
-                        for right in range(
-                            left + 1,
-                            block_length
-                        ):
-
-                            if normalised[right] < normalised[min_pos]:
-                                min_pos = right
-
-                            table[left][right] = min_pos
-
-                    micro_tables[
-                        (block_length, signature)
-                    ] = table
-
-            block_types = []
-
-            for block in range(n_blocks):
-
-                block_start = block * b_size
-                block_end = min(
-                    block_start + b_size,
-                    euler_size
-                )
-
-                block_length = block_end - block_start
-
-                # Explicit Observation 3 normalization:
-                # subtract the first Level of the block from every Level.
-                normalised_block = [
-                    euler_L[pos] - euler_L[block_start]
-                    for pos in range(
-                        block_start,
-                        block_end
-                    )
-                ]
-
-                signature = 0
-
-                for local_pos in range(
-                    1,
-                    block_length
-                ):
-
-                    signature = signature * 2
-
-                    movement = (
-                        normalised_block[local_pos]
-                        - normalised_block[local_pos - 1]
-                    )
-
+            euler_block_types = [] 
+            for euler_block_idx in range(n_euler_blocks):
+                euler_block_start = euler_block_idx * max_block_size # convert into global start position in the Euler_L array
+                euler_block_end = min(euler_block_start + max_block_size, euler_size) # convert into global end position in the Euler_L array ; min avoids extending further than the limit of euler_size if last euler block is smaller
+                euler_block_length = euler_block_end - euler_block_start
+                normalised_euler_block = [euler_L[euler_pos] - euler_L[euler_block_start] for euler_pos in range(euler_block_start, euler_block_end)]
+                # for each Euler_block, build a normalised version by removing euler_L[euler_block_start] value (the value of the first position) for
+                # every euler_pos inside that block ; this is literally the normalisation described
+                # above as euler_L[euler_pos] - euler_L[euler_block_start] = 0 when euler_pos = 0.
+                #    Euler_L block:
+                #       [7, 8, 9, 8, 7] ; euler_L[euler_block_start] = 7
+                #    subtract 7 from every value:
+                #       [7-7, 8-7, 9-7, 8-7, 7-7]
+                #    normalised_euler_block:
+                #       [0, 1, 2, 1, 0]
+                
+                euler_block_movements = []
+                # Now we describe the movement for each euler_block
+                for local_pos in range(1, euler_block_length):
+                    movement = (normalised_euler_block[local_pos] - normalised_euler_block[local_pos - 1])
+                    # normalised_euler_block = [0, 1, 2, 1, 0]
+                    # local_pos = 1:
+                    #       1 - 0 = +1
+                    # local_pos = 2:
+                    #       2 - 1 = +1
+                    # local_pos = 3:
+                    #       1 - 2 = -1
+                    # local_pos = 4:
+                    #       0 - 1 = -1
                     if movement == 1:
-
-                        # +1 is encoded by bit 1.
-                        signature = signature + 1
-
+                        euler_block_movements.append(1)
                     elif movement == -1:
-
-                        # -1 is represented by bit 0.
-                        # The left shift already inserted this zero bit.
-                        pass
-
+                        euler_block_movements.append(-1)
                     else:
+                        raise RuntimeError("Euler_L doesn't satisfy the ±1 property")
+                euler_block_movements = tuple(euler_block_movements) # because we will use it as a key of the micro_tables dictionnary : lists cannot be used as keys
+                euler_block_types.append((euler_block_length, euler_block_movements))
 
-                        # This should be impossible if the Euler Tour was built
-                        # correctly: two consecutive Euler levels must differ
-                        # exactly by +1 or -1.
-                        raise RuntimeError(
-                            "Euler_L does not satisfy the +/-1 property."
-                        )
+                # Example :
+                #
+                #       local positions:       0  1  2  3  4
+                #       Euler_L values:       [3, 4, 3, 2, 1]
+                #                                          ^
+                #                                         min
+                #       normalised : [0, 1, 0, -1, -2]
+                #       movements :  [1, -1, -1, -1]
+                #       length = 5
+                #       micro_tables_key = (5,(1,-1,-1,-1))
+                #
+                # Suppose an RMQ query reaches this last block but ENDS at its third value:
+                #
+                #       local positions:       0  1  2  3  4
+                #       Euler_L values:       [3, 4, 3, 2, 1]
+                #                              |-----|
+                #                              queried part
+                # We already precomputed the min of this block as being in the 5th position, but the query ending in the middle doesn't align
+                # with the precomputed answer for that block size, we need local minima informations stored in micro_tables :
+                #       micro_tables[(5,(1,-1,-1,-1))][0][2]
+                #                             │        │  │
+                #                             │        │  └──────── end of the queried interval inside the block (column // right)
+                #                             │        └─────────── start of the queried interval inside the block (row // left)
+                #                             └──────────────────── choose the correct precomputed block type micro_table (left/right table)
 
-                block_types.append(
-                    (block_length, signature)
-                )
 
-            all_labels = {1}
+        # ========================================================================================================
+        # Preprocessing summary ; with an example of a tree with 50 000 leaves
+        # ========================================================================================================
+        #
+        # l = 50000 ; n = 99999 nodes ; euler_size = 2n-1 = 199997 positions
+        #
+        # 1. Compute node_depth and node_age
+        #       Time
+        #       Storage
+        # 2. Construct Euler_E, Euler_L and Euler_R
+        # 3. Divide Euler_L into small Euler blocks and construct a A_prime minima values array and B minima position array 
+        # 4. Build Sparse Table M
+        # 5. Precompute ±1 micro_tables
+        
+        
+            # ========================================================================================================
+            # Retrieve all comparisons that will be queried
+            # ========================================================================================================
+            
+            all_labels = {1} # set (no double values)
             for row in mutation_table:
                 all_labels.add(row["label"])
-                all_labels.add(row["parent_label"])
-            descendant_labels = {label: {label} for label in all_labels}
+                all_labels.add(row["parent_label"]) # ensure we have ALL labels, without doubles as we store them in a set
+                # all_labels = {grey, blue, purple, red, yellow, green}
+            descendant_labels = {label: {label} for label in all_labels} # add own label as descendant, grey : {grey} means grey descends from grey. This is initialisation.
             for row in reversed(mutation_table):
                 descendant_labels[row["parent_label"]].update(descendant_labels[row["label"]])
+            # mutation_table was created in historical order, we need to reverse it so that all descendants of a label are known when updating its lineage.
+            # here's the mutation table of the general tree example:
+            #
+            #       "parent_label" -> "label"
+            #       grey -> blue
+            #       grey -> purple
+            #       blue -> red
+            #       blue -> yellow
+            #       grey -> green
+            #
+            # in reverse we inspect grey -> green first, so for descendant_label[grey] we add the descendant_labels[green] lineage.
+            # Why lineage and not only "green" because if green had descendants added previously to its lineage, then it means that they also
+            # descend from grey.
+            # descendant_labels = {
+            #     "grey":   {"grey", "green"},
+            #     "blue":   {"blue"},
+            #     "purple": {"purple"},
+            #     "red":    {"red"},
+            #     "yellow": {"yellow"},
+            #     "green":  {"green"}}
+            # Then we add yellow and red to blue, just like green these two labels have no descendant labels so its just like if we add only them
+            # descendant_labels = {
+            #     "grey":   {"grey", "green"},
+            #     "blue":   {"blue", "yellow", "red"},
+            #     "purple": {"purple"},
+            #     "red":    {"red"},
+            #     "yellow": {"yellow"},
+            #     "green":  {"green"}}
+            # Then grey -> purple and grey -> blue :
+            #     "grey":   {"grey", "green", "purple", "blue", "yellow", "red"},
+            #     "blue":   {"blue", "yellow", "red"},
+            #     "purple": {"purple"},
+            #     "red":    {"red"},
+            #     "yellow": {"yellow"},
+            #     "green":  {"green"}}
+            # As you can see we added ALL blue descendants as also descendants of grey.
+            # So when querying descendant_labels[blue] = "blue", "red", "yellow"
+            # descendant_labels[grey] = "grey", "green", "purple", "blue", "yellow", "red"
+    
             label_to_leaves = {}
             for leaf in tree.iter_leaves():
                 label_to_leaves.setdefault(leaf.sp, []).append(leaf)
+                # label_to_leaves = {
+                #   grey:   [grey_ind1, grey_ind2...],
+                #   red:    [red_ind1...],
+                #   yellow: [yellow_ind1...]}
+                # blue has no leaves in present, so it's not part of this dictionary
             for row in mutation_table:
                 derived_label = row["label"]
                 parent_label = row["parent_label"]
                 derived_side_labels = descendant_labels[derived_label]
                 parent_side_labels = (descendant_labels[parent_label] - derived_side_labels)
+                # when comparing grey -> blue event ; compare derived_side of blue being descendant_labels[blue] = {"blue", "red", "yellow"}
+                # and parent_side of grey being descendant_labels[grey] = {"grey", "green", "purple", "blue", "yellow", "red"} without
+                # its blue lineage (so - {"blue", "red", "yellow"}) which is {"grey", "green", "purple"}
+                
+                # However, to compute a LCA pairwise of individuals descending from blue, we need to retrieve de leaves : but blue has no living leaves !
+                
                 derived_leaves = []
                 for label in derived_side_labels:
                     derived_leaves.extend(label_to_leaves.get(label, []))
+                    # Translate labels in leaves or in empty list :
+                    # derived_side_labels = {"blue", "red", "yellow"}
+                    # label = blue ; derived_leaves = []
+                    # label = red ; derived_leaves = [red_ind1, red_ind2]
+                    # label = yellow ; derivied_leaves = [yellow_ind1, yellow_ind2]
+                    # Therefore, derived_leaves are [red_ind1, red_ind2, yellow_ind1, yellow_ind2]
+                    # no problem with blue.
+                
                 parent_leaves = []
                 for label in parent_side_labels:
                     parent_leaves.extend(label_to_leaves.get(label, []))
+                    
                 if not derived_leaves or not parent_leaves:
-                    row["nearest_coalescence_age"] = None
-                    row["oldest_coalescence_age"] = None
-                    continue
+                    raise RuntimeError("Unexpected empty descendant set for mutation "
+                                       f"{parent_label} -> {derived_label} :"
+                                       f"derived_leaves = {len(derived_leaves)},"
+                                       f"parent_leaves = {len(parent_leaves)}")
+                
+                # if either one side is empty (shouldn't happen)
+                
                 nearest_age = None
                 oldest_age = None
+                
                 for derived_leaf in derived_leaves:
-                    left_first = euler_R[id(derived_leaf)]
+                    derived_euler_pos = euler_R[id(derived_leaf)] # get the first euler tour occurrence of the derived leaf
                     for parent_leaf in parent_leaves:
-                        right_first = euler_R[id(parent_leaf)]
+                        parent_euler_pos = euler_R[id(parent_leaf)] # get the first euler tour occurrence of the parent leaf
+                        if derived_euler_pos <= parent_euler_pos: # if derived position is smaller or = to parent position
+                            left_query_euler_pos = derived_euler_pos # left pos will be derived position
+                            right_query_euler_pos = parent_euler_pos # right pos will be parent position
+                        else: # if dervied position is greater than parent position
+                            left_query_euler_pos = parent_euler_pos # left pos will be parent position
+                            right_query_euler_pos = derived_euler_pos # right pos will be derived position
+                            # Because RMQ(left_pos, right_pos) where left_pos <= right_pos
+                            
+                        left_euler_block_idx = (left_query_euler_pos // max_block_size)
+                        right_euler_block_idx = (right_query_euler_pos // max_block_size)
+            
+                        # CASE 1 : both RMQ endpoints are inside the SAME Euler block
+                        if left_euler_block_idx == right_euler_block_idx: # then the interval is already precomputed in the microtable of this block
+                            euler_block_start = (left_euler_block_idx * max_block_size) # get global block start
+                            local_left = (left_query_euler_pos - euler_block_start) # convert global startpoint of the query in local startpoint
+                            local_right = (right_query_euler_pos - euler_block_start) # convert global endpoint of the query in local endpoint
+                            micro_tables_key = (euler_block_types[left_euler_block_idx]) # get the microtable key from the block (right == left)
+                            local_min_pos = micro_tables[micro_tables_key][local_left][local_right] # get local min pos from microtables with the key corresponding to our block, and the cover local_left-local_right
+                            minimum_euler_pos = (euler_block_start + local_min_pos) # get global min pos
                         
-                        if left_first <= right_first:
-                            left=left_first
-                            right = right_first
-                        else:
-                            left = right_first
-                            right = left_first
-                        left_block = left // b_size
-                        right_block = right // b_size
-                        if left_block == right_block:  # Both RMQ endpoints are inside the same small block.
-                            local_left = left - left_block * b_size
-                            local_right = right - left_block * b_size
-                            block_length, signature = block_types[left_block]
-                            local_min_pos = micro_tables[(block_length, signature)][local_left][local_right]
-                            minimum_position = (left_block * b_size + local_min_pos)
-                        else:
-                            # --------------------------------------------------------------------------------------------
-                            # Section 4 - First value:
-                            # minimum from left forward to the end of its block.
-                            # --------------------------------------------------------------------------------------------
-
-                            left_block_length, left_signature = block_types[
-                                left_block
-                            ]  # Retrieve the normalized +/-1 type of the block containing left.
-
-
-                            left_local = (
-                                left - left_block * b_size
-                            )  # Convert the GLOBAL left endpoint into its LOCAL position inside this block.
-
-
-                            left_local_min = micro_tables[
-                                (left_block_length, left_signature)
-                            ][left_local][left_block_length - 1]  # In-block RMQ from left to the LAST local position of its block.
-
-
-                            left_pos = (
-                                left_block * b_size + left_local_min
-                            )  # Convert this LOCAL minimum position back into its GLOBAL Euler_L position.
-                            # --------------------------------------------------------------------------------------------
-                            # Section 4 - Third value:
-                            # minimum from the beginning of right's block to right.
-                            # --------------------------------------------------------------------------------------------
-
-                            right_block_length, right_signature = block_types[
-                                right_block
-                            ]  # Retrieve the normalized +/-1 type of the block containing right.
-
-
-                            right_local = (
-                                right - right_block * b_size
-                            )  # Convert the GLOBAL right endpoint into its LOCAL position inside this block.
-
-
-                            right_local_min = micro_tables[
-                                (right_block_length, right_signature)
-                            ][0][right_local]  # In-block RMQ from the FIRST local position of the block up to right.
-
-
-                            right_pos = (
-                                right_block * b_size + right_local_min
-                            )  # Convert this LOCAL minimum position back into its GLOBAL Euler_L position.
-                            # First compare the minima returned by the two boundary blocks.
-                            # best_pos stores the GLOBAL Euler_L position of the smallest
-                            # Level found so far.
-
-                            if euler_L[left_pos] <= euler_L[right_pos]:
-
-                                best_pos = left_pos
-
+                        # CASE 2 : RMQ endpoints are located in different euler blocks
+                        # even if the queries cover the complete block on the endpoints, we still scan them
+                        # locally because it's the same result, but holistic approach
+                        else: 
+                            # 2A : minimum inside the left partial Euler block
+                            left_euler_block_start = (left_euler_block_idx * max_block_size) # get global block start
+                            left_euler_block_end = min(left_euler_block_start + max_block_size, euler_size) # get global block end
+                            left_euler_block_length = (left_euler_block_end - left_euler_block_start) # get block length
+                            local_left = (left_query_euler_pos - left_euler_block_start) # get local leaf position by substracting global start and global left_query_euler_pos
+                            micro_tables_key = (euler_block_types[left_euler_block_idx]) # get the micro_table of that block
+                            left_local_min_pos = micro_tables[micro_tables_key][local_left][left_euler_block_length - 1] # for the micro_table assigned to the key, get the min pos between local_left and the remaining of the block length
+                            left_min_euler_pos = (left_euler_block_start + left_local_min_pos) # get global min pos
+                            # 2B : minimum inside the right partial Euler block
+                            right_euler_block_start = (right_euler_block_idx * max_block_size) # same but for right block
+                            local_right = (right_query_euler_pos - right_euler_block_start)
+                            micro_tables_key = (euler_block_types[right_euler_block_idx])
+                            right_local_min_pos = micro_tables[micro_tables_key][0][local_right] # for the right extremity, it always locally starts from 0 and stops at local_right
+                            right_min_euler_pos = (right_euler_block_start + right_local_min_pos)
+                            
+                            if (euler_L[left_min_euler_pos] <= euler_L[right_min_euler_pos]): # check which is min
+                                minimum_euler_pos = left_min_euler_pos
                             else:
-
-                                best_pos = right_pos
-                            # --------------------------------------------------------------------------------------------
-                            # Section 4 - Second value:
-                            # minimum of all COMPLETE blocks between left's block and right's block.
-                            # --------------------------------------------------------------------------------------------
-
-                            middle_left = left_block + 1  # First complete block strictly after the block containing left.
-
-                            middle_right = right_block - 1  # Last complete block strictly before the block containing right.
-                            if middle_left <= middle_right:  # Enter only when at least one complete intermediate block exists.
-
-                                middle_length = (
-                                    middle_right - middle_left + 1
-                                )  # Number of complete blocks represented in this A_prime query.
-                                k = math.floor(
-                                    math.log2(middle_length)
-                                )  # Largest k such that 2**k fits inside the queried A_prime interval.
-                                first = M[
-                                    middle_left
-                                ][k]  # Argmin in the power-of-two interval beginning at middle_left.
-                                second_start = (
-                                    middle_right - 2**k + 1
-                                )  # Starting position of a second 2**k interval ending exactly at middle_right.
-
-
-                                second = M[
-                                    second_start
-                                ][k]  # Argmin in this right-aligned power-of-two interval.
-                                if A_prime[first] <= A_prime[second]:  # Compare the two candidate minimum VALUES in A_prime.
-
-                                    middle_block = first  # The minimum of the complete middle range comes from this block.
-
-                                else:  # The second candidate contains the smaller block minimum.
-
-                                    middle_block = second  # Keep the corresponding A_prime position.
-                                middle_pos = (
-                                    middle_block * b_size
-                                    + B[middle_block]
-                                )  # Recover the GLOBAL Euler_L position from which A_prime[middle_block] originated.
-                                if euler_L[middle_pos] < euler_L[best_pos]:  # Compare the complete-middle minimum with the best boundary minimum.
-
-                                    best_pos = middle_pos  # The middle range contains the global RMQ minimum.
-                            minimum_position = best_pos  # The minimum among the three Section-4 values is the answer to RMQ(left, right).   
-                        mrca = euler_E[
-                            minimum_position
-                        ]  # Convert the RMQ position back into the genealogy LCA through the Euler array E.
-                        mrca_age = node_age[
-                            id(mrca)
-                        ]  # Retrieve the already-computed age of this MRCA without another genealogy traversal.
-                        if nearest_age is None or mrca_age < nearest_age:  # Check whether this pair gives the smallest MRCA age encountered so far.
-
-                            nearest_age = mrca_age  # Update the running minimum corresponding to the nearest convention.
-
-
-                        if oldest_age is None or mrca_age > oldest_age:  # Check whether this pair gives the largest MRCA age encountered so far.
-
-                            oldest_age = mrca_age  # Update the running maximum corresponding to the oldest convention.
-                row["nearest_coalescence_age"] = nearest_age  # Store the minimum MRCA age found over the complete derived_leaves x parent_leaves Cartesian product.
-
-                row["oldest_coalescence_age"] = oldest_age  # Store the maximum MRCA age found over exactly the same individual pairs.
-
-
+                                minimum_euler_pos = right_min_euler_pos
+                            
+                            # 2C : minimum inside the complete Euler blocks located between two partial boundary blocks
+                            #
+                            #
+                            middle_left_euler_block_idx = (left_euler_block_idx + 1) # the middle part starts immediatly after the left partial block ; we have the id of the leftest middle block
+                            middle_right_euler_block_idx = (right_euler_block_idx - 1) # the middle part ends just before the right partial block ; we have the id of the rightest middle block
+                            if middle_left_euler_block_idx <= middle_right_euler_block_idx: # Is there any block between these two extreme middle blocks ?
+                                middle_block_count = (middle_right_euler_block_idx - middle_left_euler_block_idx + 1) # How many complete blocks ?
+                                k = math.floor(math.log2(middle_block_count)) # let's choose the power of two that is not greater than middle_block_count
+                                first_middle_candidate_euler_block_idx = M[middle_left_euler_block_idx][k] # Get the first A_prime min candidate starting from middle_left_euler_block_idx first' position and containing 2^k blocks
+                                second_middle_interval_start = (middle_right_euler_block_idx - 2**k + 1) # Get the second interval starting point from "middle_right_euler_block_idx - 2**k + 1" which is its endpoint.
+                                
+                                # left  B4   B5  B6   B7   B8   B9  right    Block_idx
+                                #     [ 8 ][ 5 ][ 7 ][ 3 ][ 6 ][ 4 ]         A_prime min of each block
+                                #  |-----------------------------------|     query
+                                #
+                                # This query covers 6 blocks : so we assign it 2**k ≤ 6 < 2**k+1 <=> 4 ≤ 6 < 8 so that k = 2
+                                # The fist middle interval is therefore 4 blocks long and starting from B4 to B7
+                                # The second middle interval must also contain 2**k blocks (4 blocks here) and must end at middle_right_euler_block_idx (end = 9 = B9)
+                                # start = end - length + 1 <=> start = 9 - 4 + 1 = 6
+                                # left  B4   B5    B6   B7   B8   B9 right
+                                #      [ 8 ][ 5 ][ 7 ][ 3 ][ 6 ][ 4 ]
+                                #       |------------------|             first_middle_interval
+                                #                   |------------------| second_middle_interval
+                                #                   ^^^^^^^^^
+                                #                    overlap ; not problematic
+                                
+                                second_middle_candidate_euler_block_idx = M[second_middle_interval_start][k] # Get the second A_prime min candidate
+                                if (A_prime[first_middle_candidate_euler_block_idx] <= A_prime[second_middle_candidate_euler_block_idx]):
+                                    middle_min_euler_block_idx = (first_middle_candidate_euler_block_idx)
+                                else:
+                                    middle_min_euler_block_idx = (second_middle_candidate_euler_block_idx)
+                                if (A_prime[middle_min_euler_block_idx] < euler_L[minimum_euler_pos]): # if the middle min stored in A_prime is smaller than the left and right partial min
+                                    minimum_euler_pos = (middle_min_euler_block_idx * max_block_size + B[middle_min_euler_block_idx])
+                                    # replace the previous min and convert it in global euler_L pos, we need to do the general multiplication
+                                    # block_id * max_block_size but we also need to add the local position of the minima in the block stored in B[]
+                        
+                        mrca_node = euler_E[minimum_euler_pos]
+                        mrca_age = node_age[id(mrca_node)]
+                        
+                        if nearest_age is None or mrca_age < nearest_age:
+                            nearest_age = mrca_age
+                        if oldest_age is None or mrca_age > oldest_age:
+                            oldest_age = mrca_age
+    
+                row["nearest_coalescence_age"] = nearest_age
+                row["oldest_coalescence_age"] = oldest_age
+        
+        
         # ========================================================================================================
         # Reconstruct the paraphyletic label-tree
-        # ========================================================================================================
-        #
-        # At this point mutation_table contains the divergence age that must be
-        # used for every historical mutation event:
-        #
-        #       mutation -> mutation_coalescence_age
-        #       nearest  -> nearest_coalescence_age
-        #       oldest   -> oldest_coalescence_age
-        #
-        # age_column, defined above, selects the appropriate one.
-        #
-        # We now reconstruct a phylogenetic label-tree from PRESENT-DAY labels.
-        # One phylogenetic leaf is created for each distinct label still carried
-        # by at least one present-day individual.
+        # ========================================================================================================     
 
-        lineage = {}  # Map each currently reconstructed historical label to its phylogenetic subtree.
-
-
-        for leaf in tree.iter_leaves():  # Visit every present-day individual in the original genealogy.
-
-            label = leaf.sp  # Final mutation label carried by this present-day individual.
-
-
-            if label not in lineage:  # First present-day individual encountered with this label.
-
-                popInd = [0] * (ndeme + 1)  # Create the abundance vector used by EcoPhylo to record individuals among demes.
-
-                popInd[leaf.deme] = 1  # Count this first individual in its deme.
-
-
-                new_leaf = type(tree)()  # Create a new ETE TreeNode that will represent this complete present-day label.
-
-                new_leaf.add_features(
-                    sp=label,  # Preserve the mutation/species label represented by this phylogenetic tip.
-                    name="sp" + str(label),  # Name the reconstructed tip from its label.
-                    popInd=popInd,  # Store present-day abundance among demes.
-                    mergedInd=str(leaf.name),  # Record the first genealogy individual represented by this tip.
-                    _age=0.0  # Every reconstructed tip exists at present, therefore its age is zero.
-                )
-
-                lineage[label] = new_leaf  # This new phylogenetic tip is now the reconstructed subtree associated with this label.
-            else:  # A phylogenetic tip already exists for this present-day label.
-
-                lineage[label].popInd[leaf.deme] += 1  # Add this individual to the abundance of the corresponding deme.
-
-                lineage[label].mergedInd += " " + str(leaf.name)  # Record this additional genealogy individual inside the same phylogenetic tip.
-        internal_index = 0  # Counter used only to give unique names n0, n1, ... to reconstructed internal phylogenetic nodes.
-        ordered_events = sorted(
-            mutation_table,
-            key=lambda row: (
-                row[age_column] is None,
-                row["mutation_coalescence_age"]
-                if row[age_column] is None
-                else row[age_column]
-            )
-        )
-        for event in ordered_events:  # Reconstruct historical label transitions from younger divergence ages toward older ones.
-
-            parent_label = event["parent_label"]  # Label existing before the mutation.
-
-            derived_label = event["label"]  # Unique label created by this mutation.         
-            
-            if event[age_column] is None:  # No pairwise divergence node can be positioned for this historical transition.
-
-                if derived_label in lineage and parent_label not in lineage:  # A surviving derived subtree exists but no separate parent subtree exists.
-
-                    lineage[parent_label] = lineage[derived_label]  # Propagate the same surviving subtree to the historical parent label without creating a node.
-
-                continue  # This event does not create a phylogenetic divergence node.
-
-            event_age = float(event[age_column])  # Divergence age selected by the user's mutation/nearest/oldest convention.
-
-            if derived_label not in lineage:
-
-                continue
-            
-            derived_tree = lineage[derived_label]  # Reconstructed phylogenetic subtree descending from the derived label.
-
-            if parent_label not in lineage:  # No independently represented parent-side subtree exists yet.
-
-                lineage[parent_label] = derived_tree  # Propagate the derived subtree upward as the current representation of the parent lineage.
-
-                continue  # No branching node is required until another represented lineage has to be joined.
-
-            parent_tree = lineage[parent_label]
-
-            if (
-                not parent_tree.is_leaf()
-                and abs(parent_tree._age - event_age) < 1e-12
-            ):
-
-                replacement_node = parent_tree
+        lineage = {}  # Map each currently reconstructed historical label to its phylogenetic subtree. Dictionary of subtrees associated to each label.
+        
+        # Classic tree reconstruction juste like other spmodel trees
+        for leaf in tree.iter_leaves():
+            label = leaf.sp
+            if label not in lineage:
+                popInd = [0]*(ndeme+1)
+                popInd[leaf.deme] = 1
+                
+                new_leaf = type(tree)() # creates a new empty ETE3 node
+                new_leaf.add_features(sp = label,
+                                      name = "sp" + str(label),
+                                      popInd = popInd,
+                                      mergedInd = str(leaf.name),
+                                      age = 0.0)
+                lineage[label] = new_leaf
             else:
-
-                replacement_node = type(tree)()  # Create a new internal phylogenetic node for this divergence.
-
-                replacement_node.name = "n" + str(internal_index)  # Give it a unique internal-node name.
-
-                internal_index += 1  # Reserve the next identifier for the next newly created internal node.
-
-                replacement_node.add_features(
-                    sp=None,  # Internal reconstructed nodes do not represent a present-day species label.
-                    _age=event_age  # Store the absolute divergence age represented by this node.
-                )
-                
-                parent_tree.dist = (
-                    event_age - parent_tree._age
-                )  # Branch length equals the difference between the older parent age and the younger child-subtree age.
-
-                replacement_node.add_child(
-                    parent_tree
-                )  # Attach the previously reconstructed parent-side subtree below this new divergence node.
-                
-            derived_tree.dist = (
-                event_age - derived_tree._age
-            )  # Set the branch length connecting the derived subtree to the divergence age.
+                lineage[label].popInd[leaf.deme] += 1 # if the traversed leaf's label is already in lineage, it means we can just add 1
+                                                      # to the popInd value of lineage[label].popInd and in the precise deme given by the traversed leaf
+                lineage[label].mergedInd += " " + str(leaf.name)
 
 
-            replacement_node.add_child(
-                derived_tree
-            )  # Attach the complete derived subtree to the reconstructed divergence node.
+        innerNodeIndex = 0 # node index
+        present_labels = set(lineage.keys())
+        
+        ordered_mutations = [row for _, row in sorted(enumerate(mutation_table),
+                                                      key = lambda item:(
+                                                          item[1][age_column],
+                                                          -item[0]))]                 # mutation_table may be ordered historically,
+                                                                                      # this order may have changed in nearest or oldest cols
+        for event in ordered_mutations:
+            parent_label = event["parent_label"]
+            derived_label = event["label"]
+            event_age = float(event[age_column])
             
-            lineage[parent_label] = replacement_node  # The complete merged subtree now becomes the reconstructed lineage associated with the historical parent label.
+            if derived_label not in lineage:
+                raise RuntimeError("A derived label isn't in lineage dictionary, either a leaf is missing from lineage"
+                                   f" or a transition label {parent_label} -> {derived_label} is computed as derived_label"
+                                   " before being computed as parent_label : this shouldn't be, computing it as parent first"
+                                   " as intended should assign it a descendant subtree in the dictionary, report this error"
+                                   " and the code with a seed.")
             
-        tree = lineage[1]  # Label 1 is the ancestral label, so its reconstructed subtree is the complete paraphyletic phylogeny.
+            derived_tree = lineage[derived_label] # retrieve the descendants history (subtree) of the derived label
+            
+            if parent_label not in lineage: # CASE 1 : parent_label doesn't exist yet in lineage dictionary : it is a transition label
+                lineage[parent_label] = derived_tree # assign it the descendants history ; for blue -> red, blue isn't in lineage yet so
+                continue                             # assign lineage[blue] = lineage[red] ; when computing blue -> yellow we will now be in
+                                                     # CASE 2.
+                                                     
+            parent_tree = lineage[parent_label] # CASE 2 : if parent is in lineage, retrieve its subtree
+            
+            if (not parent_tree.is_leaf() and abs(parent_tree.age - event_age) < 1e-12): # CASE 2A : an internal node already exist at exactly "event_age" --> reuse it and create/extend the polytomy
+                # Let's take our pilot example with these events in "oldest" :
+                # blue -> red = 50
+                # blue -> yellow = 50
+                # grey -> blue = 100
+                # grey -> purple = 100
+                # grey -> green = 100
+                # right now parent_tree looks like :
+                # grey -> blue is processed like this, see more in CASE 2B
+                #                         ┌──────────── grey
+                #                    ─────┤ age 100
+                #                         │      ┌───── red
+                #                         └──────┤ age 50
+                #                                └───── yellow
+                # then we process grey -> purple and notice it has the same node, therefore we need to create a polytomy :
+                #                         ┌──────────── grey
+                #                         │
+                #                    ─────┼──────────── purple
+                #                         │
+                #                         │      ┌───── red
+                #                         └──────┤
+                #                                └───── yellow
+                
+                replacement_node = parent_tree # replacement_node refers to the already existing subtree, we will complete it later after else CASE 2B
+            else: # CASE 2B : parent_label already has a subtree in lineage and if parent_tree is still a leaf in dictionary (first occurrence of grey as parent_label for example)
+                  # Because we checked parent_tree.age - event_age : a leaf has .age at 0.0
+                replacement_node = type(tree)()
+                replacement_node.name = "n" + str(innerNodeIndex)
+                innerNodeIndex += 1
+                
+                replacement_node.add_features(sp = None,
+                                              age = event_age) # new abs age
+                
+                parent_tree.dist = event_age - parent_tree.age # new dist between the parent and child
+                if parent_tree.dist < -1e-12:
+                    raise RuntimeError("Historical reconstruction produced a negative branch "
+                                       f"for parent side of {parent_label} -> {derived_label}: "
+                                       f"event_age = {event_age}, "
+                                       f"parent_age = {parent_tree.age}")
+                if parent_tree.dist < 0: 
+                    parent_tree.dist = 0.0
+                
+                replacement_node.add_child(parent_tree)
+            
+            # Attach derived subtree to the node
+            
+            derived_tree.dist = event_age - derived_tree.age
+            if derived_tree.dist < -1e-12:
+                raise RuntimeError("Historical reconstruction produced a negative branch "
+                                   f"for derived side of {parent_label} -> {derived_label}: "
+                                   f"event_age = {event_age}, "
+                                   f"derived_tree.age = {derived_tree.age}")
+            
+            if derived_tree.dist < 0:
+                derived_tree.dist = 0.0
+                
+            if derived_tree not in replacement_node.get_children():
+                replacement_node.add_child(derived_tree)
+                
+            lineage[parent_label] = replacement_node
+            
+        if 1 not in lineage:
+            raise RuntimeError("Historical reconstruction did not recover ancestral label 1")
+        tree = lineage[1]
+        tree.dist = 0.0
+        
+        reconstructed_labels = [leaf.sp for leaf in tree.iter_leaves()]
+        
+        if (len(reconstructed_labels) != len(present_labels) or set(reconstructed_labels) != present_labels):
+            raise RuntimeError(
+            "Historical reconstruction changed the present-day label set: "
+            f"expected {sorted(present_labels)}, "
+            f"obtained {sorted(reconstructed_labels)}."
+        )
 
     if spmodel in ("loose", "lacy"):
         nsp = 1
@@ -1270,7 +1434,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         mu=mu,
         tau=tau,
         mutation_table = mutation_table,
-        age = age)
+        age_convention = age)
     
     if debug:
         # ===== AFTER MERGE =====
