@@ -284,7 +284,7 @@ def getAbund(tree, samples = None, spmodel = None):
         else:
             raise ValueError("spmodel must be provided because the tree has no 'tree.spmodel' attribute")
 
-    if spmodel not in ("loose", "lacy", "phenotypic", "genealogy"):
+    if spmodel not in ("loose", "lacy", "phenotypic", "genealogy", "NTB", "SGD", "paraphyletic"):
         raise ValueError("spmodel must be either 'loose', 'lacy', 'genealogy' or 'phenotypic'")
 
             
@@ -297,7 +297,7 @@ def getAbund(tree, samples = None, spmodel = None):
             except AttributeError:
                 abund.append(1) #shouldn't this be a list so append([1]) ?
         sfs.extend(abund)
-    elif spmodel in ("genealogy", "phenotypic"): #CHANGER ICI GENEALOGY MARCHE PAS
+    elif spmodel in ("genealogy", "phenotypic", "NTB", "SGD", "paraphyletic"): #CHANGER ICI GENEALOGY MARCHE PAS
         from collections import Counter
         leaf_names = []
         for leaf in tree.iter_leaves():
@@ -367,7 +367,7 @@ def getDeme(tree, div = False, spmodel = None):
             except AttributeError :
                 indiv.append([1])
     
-    elif spmodel in ("genealogy", "broken-NTB"):
+    elif spmodel in ("genealogy", "NTB", "SGD", "paraphyletic"):
         sp_to_popInd = {}
         for leaf in tree.iter_leaves():
             sp = leaf.sp
