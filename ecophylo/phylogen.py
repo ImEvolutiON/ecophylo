@@ -1391,8 +1391,21 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
             
         if 1 not in lineage:
             raise RuntimeError("Historical reconstruction did not recover ancestral label 1")
-        tree = lineage[1]
-        tree.dist = 0.0
+        crown_tree = lineage[1]
+        root_stem_length = tree_height - float(crown_tree.age)
+        if root_stem_length < -1e-12:
+            raise RuntimeError("Reconstructed tree is older than the original genealogy : error")
+        if root_stem_length < 0:
+            root_stem_length = 0.0 # float miscalculation error
+        if root_stem_length > 1e-12:
+            ancestral_root = type(crown_tree)()
+            crown_tree.dist = root_stem_length
+            ancestral_root.add_child(crown_tree)
+            ancestral_root.dist = 0.0
+            tree = ancestral_root
+        else:
+            crown_tree.dist = 0.0
+            tree = crown_tree
         
         reconstructed_labels = [leaf.sp for leaf in tree.iter_leaves()]
         
