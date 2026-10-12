@@ -71,13 +71,8 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         The minimum time on a branch that have to pass for mutation to occur.
         
         
-    spmodel = {"genealogy", "loose", "lacy", "paraphyletic"}
+    spmodel = {"loose", "lacy", "paraphyletic"}
         default = "paraphyletic" : string
-
-        - "genealogy"
-        The complete genealogy is retained after mutation sprinkling.
-        Cannot be forced into a species tree or a LTT (later implementation
-        may allow genealogical-LTT).
         
         - "loose"
         The complete genealogy is collapsed in a set of monophyletic clades
@@ -245,10 +240,12 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         raise ValueError('tree must have a class TreeNode')
     if mu < 0 or mu > 1 or not isinstance(mu, (int,float)):
         raise ValueError('mu must be a float between 0 and 1')
-    if not spmodel in ['loose', 'lacy', 'genealogy', 'paraphyletic']:
+    if not spmodel in ['loose', 'lacy', 'paraphyletic']:
         raise ValueError(spmodel+' is not a correct model. '+
-                'spmodel must be either "loose", "lacy", "genealogy" or ',
+                'spmodel must be either "loose", "lacy" or ',
                 '"paraphyletic" string')
+    if spmodel == "genealogy":
+        raise ValueError('genealogy cannot be passed to toPhylo()')
     if not isinstance(force_ultrametric, bool):
         raise ValueError('force_ultrametric must be a boolean')
     if not isinstance(debug, bool):
@@ -491,13 +488,6 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
             "abundances": before_abundances,
             "total_abundance": sum(before_abundances),
             "tmrca": before_tmrca,}
-        
-    
-    if spmodel == "genealogy":
-        for leaf in tree.iter_leaves():
-            popInd = [0] * (ndeme+1)
-            popInd[leaf.deme] = 1
-            leaf.popInd = popInd
 
     if spmodel == "loose" : 
 
@@ -1420,11 +1410,7 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         nsp = 1
         for leaf in tree.iter_leaves():
             leaf.name = "sp"+str(nsp)
-            nsp += 1
-    if spmodel == "genealogy":
-        print("Warning : This output is a genealogical tree without phylogenetic attributes. It may constain paraphyletic relations arising from ancestral retention")
-        print("Please don't try to getLTT() on this output as this you will count multiple branches from the same lineage.")
-            
+            nsp += 1          
             
     # SECURITY CHECK FOR ULTRAMETRICITY FLOAT LOSS
             

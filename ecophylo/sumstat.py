@@ -89,13 +89,11 @@ def getLTT(tree, spmodel = None, age = "mutation", graph = False):
         else:
             raise ValueError("spmodel must be provided because the tree has no 'tree.spmodel' attribute."
                              "Maybe you didn't use toPhylo() ?")
-    if spmodel not in ("genealogy", "loose", "lacy", "phenotypic") :
-        raise ValueError("spmodel must be either 'genealogy', 'loose', 'lacy' or 'phenotypic'.")
+    if spmodel not in ("genealogy", "loose", "lacy", "paraphyletic") :
+        raise ValueError("spmodel must be either 'genealogy', 'loose', 'lacy' or 'paraphyletic'.")
     if spmodel == "genealogy":
         raise ValueError("spmodel = genealogy : A genealogy cannot be computed into LTT yet.")
-    if spmodel not in ("loose", "lacy", "phenotypic"):
-        raise ValueError('spmodel must be one of "genealogy", "loose", "lacy" or "phenotypic".')
-    if spmodel == "phenotypic" and age not in ("mutation", "nearest", "oldest"):
+    if spmodel == "paraphyletic" and age not in ("mutation", "nearest", "oldest"):
             raise ValueError('age must be one of "mutation", "nearest" or "oldest".')
     if not isinstance(graph, bool):
         raise ValueError('graph must be a boolean.')
@@ -112,14 +110,29 @@ def getLTT(tree, spmodel = None, age = "mutation", graph = False):
 
 
     # Event collector
-    events = {} # Dictionary storing date of events
+    start_lineages = 1
+    events = {tree_height: 0}
     
     if spmodel in ["loose", "lacy"] :
-        print("here iz ur ltt : a lot of lineages :3")
-    elif spmodel == "phenotypic" :
+
+        age_type = "phylogenetic"        
+        node_depth = {tree : 0.0}
+        
+        for node in tree.traverse("preorder"):
+            if node is not tree:
+                node_depth[node]=(node_depth[node.up] + float(node.dist))
+            
+            n_children = len(node.children)
+                
+            if n_children < 2:
+                continue
+            
+            event_age = max(0.0, tree_height - node_depth[node])
+            events[event_age] = (events.get(event_age, 0) + n_children - 1)
+        
+        
+    elif spmodel == "paraphyletic" :
         # Label-Through-Time curve
-      
-        start_lineages = 0 # We start with 0 retained labels
         age_type = age
         
         try :
@@ -133,8 +146,6 @@ def getLTT(tree, spmodel = None, age = "mutation", graph = False):
                       "nearest": "nearest_coalescence_age",    # If age is "mutation" the column name isn't "mutation" its
                       "oldest": "oldest_coalescence_age"}[age] # "mutation_coalescence_age"
             
-        events[tree_height] = events.get(tree_height, 0) + 1 # Count ancestral label at tree root. If it's not already assigned set it to 0 ; then add 1
-
         for row in mutation_table :
             if age_column not in row :
                 raise ValueError('Column '  + age_column + 'is missing from mutation_table. Check toPhylo()')
@@ -169,34 +180,23 @@ def getLTT(tree, spmodel = None, age = "mutation", graph = False):
                                                              # we add 1 to it and assign it back.
             
     # Build LTT
-        
-    if len(events) == 0 :
-        if spmodel == "phenotypic":
-            raise ValueError('No event found for getLTT(spmodel="phenotypic"). This shouldn\'t happen'
-                             ' because getLTT() explicity adds ancestral label 1 at tree_height.')
-            # This is possible for single tip loose/lacy trees
-            
-        output_age = [tree_height]
-        output_lineages = [1]
-        if not np.isclose(tree_height, 0.0, atol = 1e-12): # VERIFIER IMPLEMENTATION DE SINGLE TIP LOOSE/LACY
-            output_age.append(0.0)
-            output_lineages.append(1)
-    else:
-        sorted_ages = sorted(events.keys(), reverse=True) # Sort events from oldest to youngest
-        output_age = []
-        output_lineages = []
-        current_lineages = start_lineages
-        
-        for event_age in sorted_ages:
-            current_lineages += events[event_age]
-            output_age.append(event_age)
-            output_lineages.append(current_lineages)
-        if not np.isclose(output_age[-1], 0.0, atol=1e-12): # Extend the curve to present if the last (youngest) isnt close to 0
-            output_age.append(0.0)
-            output_lineages.append(current_lineages)
     
+    sorted_ages = sorted(events.keys(), reverse=True)
+    output_age = []
+    output_lineages = []
+    current_lineages = start_lineages
+
+    for event_age in sorted_ages:
+        current_lineages += events[event_age]
+        output_age.append(event_age)
+        output_lineages.append(current_lineages)
+
+    if not np.isclose(output_age[-1], 0.0, atol=1e-12):
+        output_age.append(0.0)
+        output_lineages.append(current_lineages)
+
     oldest_retained_event = output_age[0]
-    output_time = [oldest_retained_event - x for x in output_age] # Convert age before present into time since oldest retained event
+    output_time = [oldest_retained_event - x for x in output_age]
     
     # Output
     

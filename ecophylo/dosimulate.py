@@ -988,6 +988,10 @@ def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "paraphyletic",
     node_labels = {u: str(u)+'_'+str(tree.population(u)) for u in tree.nodes()\
                                                            if tree.is_sample(u)}
     tree = Tree(tree.newick(node_labels = node_labels))
+    
+    if spmodel == "genealogy":
+        return tree
+    
     phylo = phylogen.toPhylo(
         tree= tree, mu= mu, tau= tau, spmodel = spmodel, age = age, seed= seed,
         debug = debug)
