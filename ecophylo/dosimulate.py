@@ -95,6 +95,9 @@ def dosimuls(nsim, samples, deme_sizes, mu, tau = 0, spmodel = "paraphyletic",
     # file_name
     if file_name is not None and not isinstance(file_name, str) :
         raise ValueError("file_name must be string value.")
+    if spmodel == "genealogy":
+        raise ValueError("spmodel='genealogy' is not supported in dosimuls(), please use simulate()"
+                         " to generate raw genealogies")
             
 
     # register None values before they are initiated
@@ -729,10 +732,10 @@ def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "paraphyletic",
         times at which changes occured in which the first element is 0.
         
     spmodel = {"genealogy", "loose", "lacy", "paraphyletic"}
-        default = "genealogy" : string
+        default = "paraphyletic" : string
 
         - "genealogy"
-        The complete genealogy is retained after mutation sprinkling.
+        The complete genealogy is retained before mutation sprinkling.
         Cannot be coerced in a species tree.
         
         - "loose"
@@ -754,12 +757,12 @@ def simulate(samples, deme_sizes, mu, tau = 0, spmodel = "paraphyletic",
         individuals as it usually needs to XXXXX : individuals with the same
         labels can be in different species. This is equivalent to splitters.
         
-        - "phenotypic"
+        - "paraphyletic"
         The complete genealogy is collapsed in a set of monophyletic lineages
         as a "label-tree" rather than a species tree. This is equivalent to
         Hubbell's UNTB and associated research (Jabot & Chave 2009). See more
-        in Manceau, Lambert 2018 but note what we call "XXXXX" is analogous to
-        what they call "phenotypic", implying phenotypes.
+        in Manceau, Lambert 2018 but note what we call "paraphyletic" is
+        analogous to what they call "phenotypic", implying phenotypes.
 
     mrca = None : int
         # TODO : document this when it is implemented

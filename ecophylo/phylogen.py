@@ -244,8 +244,6 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
         raise ValueError(spmodel+' is not a correct model. '+
                 'spmodel must be either "loose", "lacy" or ',
                 '"paraphyletic" string')
-    if spmodel == "genealogy":
-        raise ValueError('genealogy cannot be passed to toPhylo()')
     if not isinstance(force_ultrametric, bool):
         raise ValueError('force_ultrametric must be a boolean')
     if not isinstance(debug, bool):
@@ -1437,29 +1435,20 @@ def toPhylo(tree, mu, tau = 0, spmodel = "paraphyletic",
     
     if debug:
         # ===== AFTER MERGE =====
+        # In loose/lacy, after merge, each remaining leaf is one species.
+        after_abundances = []
 
-        if spmodel == "genealogy":
-            after_species_count = {}
-            for leaf in tree.iter_leaves():
-                after_species_count[leaf.sp] = after_species_count.get(leaf.sp, 0) + 1
-
-            after_abundances = list(after_species_count.values())
-
-        else:
-            # In loose/lacy, after merge, each remaining leaf is one species.
-            after_abundances = []
-
-            for leaf in tree.iter_leaves():
-                if hasattr(leaf, "popInd"):
-                    after_abundances.append(sum(leaf.popInd))
-                elif hasattr(leaf, "mergedInd"):
-                    after_abundances.append(len(leaf.mergedInd.split()))
-                else:
-                    after_abundances.append(1)
-
+        for leaf in tree.iter_leaves():
+            if hasattr(leaf, "popInd"):
+                after_abundances.append(sum(leaf.popInd))
+            elif hasattr(leaf, "mergedInd"):
+                after_abundances.append(len(leaf.mergedInd.split()))
+            else:
+                after_abundances.append(1)
+    
         after_ages = [tree.get_distance(leaf) for leaf in tree.iter_leaves()]
         after_tmrca = max(after_ages) if after_ages else 0.0
-
+    
         debug_info["after_merge"] = {
             "n_species": len(after_abundances),
             "n_singletons": sum(ab == 1 for ab in after_abundances),

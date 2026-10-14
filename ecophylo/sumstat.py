@@ -9,12 +9,49 @@ Created on Wed May 13 11:42:50 2020
 
 Functions :
     getLTT
+    getSAD
     getAbund
     getDeme
 
 """
 
 import numpy as np
+
+
+def getSAD(tree, method="rad", base=1.1, spmodel=None):
+    
+    # CHECKS
+    if tree.__class__.__name__ != "TreeNode":
+        raise ValueError("tree must have class TreeNode")
+    if spmodel is None:
+        if hasattr(tree, "spmodel"):
+            spmodel = tree.spmodel
+        else:
+            raise ValueError(
+                "spmodel must be provided because the tree has no "
+                "'tree.spmodel' attribute. Maybe you didn't use toPhylo()?"
+            )
+    if spmodel not in ("loose", "lacy", "paraphyletic"):
+        raise ValueError("spmodel must be 'loose', 'lacy' or 'paraphyletic'")
+    if method not in ("rad", "exact", "binned"):
+        raise ValueError("method must be 'rad', 'exact' or 'binned'")
+    if method == "binned" and base <= 1:
+        raise ValueError("base must be greater than 1")
+            
+    abund = getAbund(tree, spmodel=spmodel)
+    sample_size = sum(abund)
+    
+    if method == "rad":
+        rad = np.sort(abund)[::-1]
+        return rad
+    
+    elif method == "exact":
+        sad = np.bincount(abund, minlength=sample_size+1)[1:]
+        return sad
+    
+    if method == "binned":
+        return print("not implemented yet")
+
 
 def getLTT(tree, spmodel = None, age = "mutation", graph = False):
     """
@@ -25,24 +62,18 @@ def getLTT(tree, spmodel = None, age = "mutation", graph = False):
     Parameters
     ----------
     tree : (ete3 class)
-        Phylogeny or genealogy with attribute "spmodel" on the root. Output of
-        toPhylo().
+        Phylogeny with attribute "spmodel" on the root. Output of toPhylo().
     
-    spmodel : {"genealogy", "loose", "lacy", "phenotypic"}, string, red
-    automatically
+    spmodel : {loose", "lacy", "paraphyletic"}, string, red automatically
         The species partition used to transform the gene tree in a species
         tree.
-        
-        - "genealogy"
-        Compute a genealogies-through-time curve from the topology of the
-        individual genealogy.
         
         - "loose", "lacy"
         Compute a species lineage-through-time curve from the phylogenetic nodes
         of the monophyletic species tree returned by the species partition in
         toPhylo().
         
-        - "phenotypic"
+        - "paraphyletic"
         Compute a label-through-time curve from a mutation table keeping the
         date of appearance of mutations a label, the nearest and the oldest
         coalescence time of this label and its parent label. LTT produced are
@@ -89,10 +120,8 @@ def getLTT(tree, spmodel = None, age = "mutation", graph = False):
         else:
             raise ValueError("spmodel must be provided because the tree has no 'tree.spmodel' attribute."
                              "Maybe you didn't use toPhylo() ?")
-    if spmodel not in ("genealogy", "loose", "lacy", "paraphyletic") :
-        raise ValueError("spmodel must be either 'genealogy', 'loose', 'lacy' or 'paraphyletic'.")
-    if spmodel == "genealogy":
-        raise ValueError("spmodel = genealogy : A genealogy cannot be computed into LTT yet.")
+    if spmodel not in ("loose", "lacy", "paraphyletic") :
+        raise ValueError("spmodel must be either 'loose', 'lacy' or 'paraphyletic'.")
     if spmodel == "paraphyletic" and age not in ("mutation", "nearest", "oldest"):
             raise ValueError('age must be one of "mutation", "nearest" or "oldest".')
     if not isinstance(graph, bool):
@@ -138,9 +167,7 @@ def getLTT(tree, spmodel = None, age = "mutation", graph = False):
         try :
             mutation_table = tree.mutation_table
         except AttributeError :
-            raise ValueError("getLTT(spmodel = phenotypic) requires tree.mutation_table."
-                             'If you generated a genealogy with simulate(spmodel = "genealogy") you should use toPhylo() before getLTT().'
-                             'However if you generated a phylogeny with simulate then something has gone wrong.')
+            raise ValueError("getLTT(spmodel = paraphyletic) requires tree.mutation_table.")
         
         age_column = {"mutation": "mutation_coalescence_age",  # Translate the user argument into the mutation_table column name. 
                       "nearest": "nearest_coalescence_age",    # If age is "mutation" the column name isn't "mutation" its
@@ -154,14 +181,14 @@ def getLTT(tree, spmodel = None, age = "mutation", graph = False):
             
             if label_age is None : # because we initialized all oldest/nearest_coalescence_age to None, check if there's a None remaining
                 raise ValueError(
-                    'Cannot compute phenotypic getLTT(age = "'+ age +'") because '
+                    'Cannot compute paraphyletic getLTT(age = "'+ age +'") because '
                     'mutation ' + str(row.get("mutation_id")) + ' has no value for '
                     + age_column)
             
             label_age = float(label_age)
             
             if np.isnan(label_age) :
-                raise ValueError("Cannot compute phenotypic getLTT(age='" + age + "')because "
+                raise ValueError("Cannot compute paraphyletic getLTT(age='" + age + "')because "
                                  "mutation " + str(row.get("mutation_id")) + " has NaN for " +
                                  age_column + ".")
             if label_age < 0 :
@@ -229,7 +256,7 @@ def getLTT(tree, spmodel = None, age = "mutation", graph = False):
     return output
 
             
-def getAbund(tree, samples = None, spmodel = None):
+def getAbund(tree, samples = None, spmodel = None): # NORMALISER L'UTILISATION DE MERGE_IND ET POP_IND
     """
     Description
     ----------
@@ -245,10 +272,10 @@ def getAbund(tree, samples = None, spmodel = None):
         topPhylo result). Names is formated like this :
         " name1 name2 name3"
     
-    spmodel : {"genealogy", "loose", "lacy", "phenotypic"} string
+    spmodel : {"loose", "lacy", "paraphyletic"} string
         The species partition used to transform the gene tree in a species tree
-        that have impact on how to read labels. Genealogy and phenotypic can
-        have paraphyletic groups to you have to add the individuals of two
+        that have impact on how to read labels. Paraphyletic can have
+        paraphyletic groups to you have to add the individuals of two
         different tips.
     
     samples : int
@@ -284,8 +311,8 @@ def getAbund(tree, samples = None, spmodel = None):
         else:
             raise ValueError("spmodel must be provided because the tree has no 'tree.spmodel' attribute")
 
-    if spmodel not in ("loose", "lacy", "phenotypic", "genealogy"):
-        raise ValueError("spmodel must be either 'loose', 'lacy', 'genealogy' or 'phenotypic'")
+    if spmodel not in ("loose", "lacy", "paraphyletic"):
+        raise ValueError("spmodel must be either 'loose', 'lacy' or 'paraphyletic'")
 
             
     if spmodel in ("loose", "lacy"):
@@ -297,7 +324,7 @@ def getAbund(tree, samples = None, spmodel = None):
             except AttributeError:
                 abund.append(1) #shouldn't this be a list so append([1]) ?
         sfs.extend(abund)
-    elif spmodel in ("genealogy", "phenotypic"): #CHANGER ICI GENEALOGY MARCHE PAS
+    elif spmodel in ("paraphyletic"):
         from collections import Counter
         leaf_names = []
         for leaf in tree.iter_leaves():
@@ -312,7 +339,7 @@ def getAbund(tree, samples = None, spmodel = None):
         # TODO : modify error with a better check here
     return sfs
 
-def getDeme(tree, div = False, spmodel = None):
+def getDeme(tree, div = False, spmodel = None):  # NORMALISER L'UTILISATION DE MERGE_IND ET POP_IND
     """
     
     Parameters
@@ -360,26 +387,14 @@ def getDeme(tree, div = False, spmodel = None):
         else:
             raise ValueError("spmodel must be provided because the tree has no 'tree.spmodel' attribute")
             
-    if spmodel in ("loose", "lacy"): 
+    if spmodel in ("loose", "lacy", "paraphyletic"):
         for leaf in tree.iter_leaves():
             try:
                 indiv.append(leaf.popInd)
             except AttributeError :
-                indiv.append([1])
-    
-    elif spmodel in ("genealogy", "broken-NTB"):
-        sp_to_popInd = {}
-        for leaf in tree.iter_leaves():
-            sp = leaf.sp
-            if sp not in sp_to_popInd:
-                sp_to_popInd[sp] = leaf.popInd.copy()
-            else:
-                for i in range(len(leaf.popInd)):
-                    sp_to_popInd[sp][i] += leaf.popInd[i]
-        indiv = list(sp_to_popInd.values())
-    
+                indiv.append([1])    
     else:
-        raise ValueError("spmodel should be loose, lacy or genealogy")
+        raise ValueError("spmodel should be loose or lacy")
     
     if div:
         indiv = np.array(indiv)
